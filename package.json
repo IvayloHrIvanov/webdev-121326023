@@ -1,0 +1,24 @@
+{
+  "name": "mcp-server-from-scratch",
+  "version": "1.0.0",
+  "description": "This repository is your workspace for the whole course: Exercise 1 in `mcp-server/`, and your project (Exercises 2–5) in the rest of it. Everything runs in your browser through GitHub Codespaces, so nothing needs to be installed on your laptop.",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "mcp": "node mcp-server/server.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/IvayloHrIvanov/MCP-server-from-scratch.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/IvayloHrIvanov/MCP-server-from-scratch/issues"
+  },
+  "homepage": "https://github.com/IvayloHrIvanov/MCP-server-from-scratch#readme"
+}
