@@ -8,10 +8,10 @@
     "doc": "docs"
   },
   "scripts": {
-    "start": "node src/server.js",
-    "test": "mocha tests/**/*.test.js --exit",
-    "mcp": "node mcp-server/server.js"
-  },
+  "start": "node src/server.js",
+  "test": "node --test",
+  "mcp": "node mcp-server/server.js"
+},
   "repository": {
     "type": "git",
     "url": "git+https://github.com/IvayloHrIvanov/MCP-server-from-scratch.git"
@@ -31,6 +31,7 @@
     "sqlite": "^5.1.1"
   },
   "devDependencies": {
+    "c8": "^12.0.0",
     "chai": "^6.3.0",
     "mocha": "^12.0.3",
     "supertest": "^7.3.1"
