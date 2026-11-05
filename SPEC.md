@@ -85,6 +85,9 @@ Screens:
 - [AC-12] If a user joins a study group and reloads /sessions, the upcoming sessions of that group appear in the list.
 - [AC-13] If all upcoming sessions of a group are removed, no sessions from that group are displayed on /sessions.
 - [AC-14] The sessions are ordered by date and time, with the nearest upcoming session shown first.
+- [AC-15] A user who is a member of a group can leave it by clicking "Attend" (which changes to "Will Not Attend" and red) and is no longer listed as a member.
+- [AC-16] The list of available groups shows the date and time of the next upcoming session for each group in 24h format.
+- [AC-17] All dates and times are displayed in 24h format (e.g., 14:00 instead of 2:00 PM).
 
 ## Traceability
 <!-- Filled in from Exercise 3 onward: each AC id, and the test that names it. -->
@@ -94,3 +97,6 @@ Screens:
 
 ## Spec vs result
 <!-- After the agent builds the slice: which criteria passed, which it missed or reinterpreted, and what you changed in this spec because of it. -->
+- Passed: Sign-in, the redirect to `/login`, the list of events read from the table.
+- Missed: Joining a study group, opening /sessions without signing in is not redirected to /login
+- Changed: Nothing, fixed the issues.

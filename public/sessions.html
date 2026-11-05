@@ -5,10 +5,16 @@
     <title>Upcoming Study Sessions</title>
     <style>
         body { font-family: sans-serif; margin: 40px; background: #f4f4f9; }
-        .container { max-width: 800px; margin: auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        .container { max-width: 900px; margin: auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); margin-bottom: 20px; }
         table { width: 100%; border-collapse: collapse; margin-top: 20px; }
         th, td { padding: 12px; border-bottom: 1px solid #ddd; text-align: left; }
         th { background: #007bff; color: white; }
+        button { padding: 6px 12px; color: white; border: none; border-radius: 4px; cursor: pointer; min-width: 120px; }
+        .btn-attend { background: #28a745; }
+        .btn-attend:hover { background: #218838; }
+        .btn-not-attend { background: #dc3545; }
+        .btn-not-attend:hover { background: #c82333; }
+        .badge { background: #6c757d; color: white; padding: 4px 8px; border-radius: 4px; font-size: 12px; }
     </style>
 </head>
 <body>
@@ -20,6 +26,7 @@
                     <th>Title</th>
                     <th>Course</th>
                     <th>Date & Time</th>
+                    <th>Action</th>
                 </tr>
             </thead>
             <tbody>
@@ -27,23 +34,109 @@
             </tbody>
         </table>
     </div>
+
+    <div class="container">
+        <h2>Available Study Groups</h2>
+        <table id="groups-table">
+            <thead>
+                <tr>
+                    <th>Group Name</th>
+                    <th>Course</th>
+                    <th>Next Session</th>
+                    <th>Action</th>
+                </tr>
+            </thead>
+            <tbody>
+                <!-- Populated via JS -->
+            </tbody>
+        </table>
+    </div>
+
     <script>
-        async function loadSessions() {
-            const res = await fetch('/sessions');
-            if (res.redirected || res.status === 401) {
+        function format24h(dateStr) {
+            if (!dateStr) return 'No sessions scheduled';
+            const date = new Date(dateStr);
+            return new Intl.DateTimeFormat('en-GB', {
+                day: '2-digit',
+                month: '2-digit',
+                year: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit',
+                hour12: false
+            }).format(date);
+        }
+
+        async function loadData() {
+            // Load sessions
+            const sRes = await fetch('/api/sessions');
+            if (sRes.redirected || sRes.status === 401) {
                 window.location.href = '/login';
                 return;
             }
-            const sessions = await res.json();
-            const tbody = document.querySelector('#sessions-table tbody');
-            tbody.innerHTML = '';
-            sessions.forEach(s => {
+            const sessions = await sRes.json();
+            const sTbody = document.querySelector('#sessions-table tbody');
+            sTbody.innerHTML = '';
+            if (sessions.length === 0) {
+                sTbody.innerHTML = '<tr><td colspan="4">No upcoming sessions.</td></tr>';
+            } else {
+                sessions.forEach(s => {
+                    const tr = document.createElement('tr');
+                    const isAttending = s.attendance_status === 'attending';
+                    const actionHtml = isAttending
+                        ? `<button class="btn-not-attend" onclick="toggleSessionAttendance(${s.id}, 'not_attending')">Not Attend</button>`
+                        : `<button class="btn-attend" onclick="toggleSessionAttendance(${s.id}, 'attending')">Attend</button>`;
+
+                    tr.innerHTML = `<td>${s.title}</td><td>${s.course_name}</td><td>${format24h(s.start_time)}</td><td>${actionHtml}</td>`;
+                    sTbody.appendChild(tr);
+                });
+            }
+
+            // Load groups
+            const gRes = await fetch('/api/groups');
+            const groups = await gRes.json();
+            const gTbody = document.querySelector('#groups-table tbody');
+            gTbody.innerHTML = '';
+            groups.forEach(g => {
                 const tr = document.createElement('tr');
-                tr.innerHTML = `<td>${s.title}</td><td>${s.course_name}</td><td>${new Date(s.start_time).toLocaleString()}</td>`;
-                tbody.appendChild(tr);
+                let actionHtml = '';
+                if (g.is_member) {
+                    actionHtml = `<button class="btn-not-attend" onclick="toggleMembership(${g.id}, true)">Leave</button>`;
+                } else {
+                    actionHtml = `<button class="btn-attend" onclick="toggleMembership(${g.id}, false)">Join</button>`;
+                }
+                tr.innerHTML = `<td>${g.name}</td><td>${g.course_name}</td><td>${format24h(g.next_session)}</td><td>${actionHtml}</td>`;
+                gTbody.appendChild(tr);
             });
         }
-        loadSessions();
+
+        async function toggleMembership(groupId, isMember) {
+            const method = isMember ? 'DELETE' : 'POST';
+            const res = await fetch('/api/memberships', {
+                method: method,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ groupId })
+            });
+            if (res.ok) {
+                loadData();
+            } else {
+                alert('Failed to update membership');
+            }
+        }
+
+        async function toggleSessionAttendance(sessionId, status) {
+            const res = await fetch(`/api/sessions/${sessionId}/attendance`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ status })
+            });
+            if (res.ok) {
+                loadData();
+            } else {
+                alert('Failed to update session attendance');
+            }
+        }
+
+        loadData();
     </script>
 </body>
 </html>
