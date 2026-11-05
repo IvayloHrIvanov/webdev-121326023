@@ -9,8 +9,8 @@
   },
   "scripts": {
   "start": "node src/server.js",
-  "test": "mocha tests/**/*.test.js --exit",
-  "coverage": "c8 mocha tests/**/*.test.js --exit",
+  "test": "node --test",
+  "coverage": "node --test --experimental-test-coverage --test-coverage-include='src/services/**' --test-coverage-exclude='tests/**' --test-coverage-lines=100 --test-coverage-functions=100 --test-coverage-branches=100",
   "mcp": "node mcp-server/server.js"
 },
   "repository": {
