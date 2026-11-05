@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Upcoming Study Sessions</title>
+    <style>
+        body { font-family: sans-serif; margin: 40px; background: #f4f4f9; }
+        .container { max-width: 800px; margin: auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th, td { padding: 12px; border-bottom: 1px solid #ddd; text-align: left; }
+        th { background: #007bff; color: white; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2>Upcoming Study Sessions</h2>
+        <table id="sessions-table">
+            <thead>
+                <tr>
+                    <th>Title</th>
+                    <th>Course</th>
+                    <th>Date & Time</th>
+                </tr>
+            </thead>
+            <tbody>
+                <!-- Populated via JS -->
+            </tbody>
+        </table>
+    </div>
+    <script>
+        async function loadSessions() {
+            const res = await fetch('/sessions');
+            if (res.redirected || res.status === 401) {
+                window.location.href = '/login';
+                return;
+            }
+            const sessions = await res.json();
+            const tbody = document.querySelector('#sessions-table tbody');
+            tbody.innerHTML = '';
+            sessions.forEach(s => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `<td>${s.title}</td><td>${s.course_name}</td><td>${new Date(s.start_time).toLocaleString()}</td>`;
+                tbody.appendChild(tr);
+            });
+        }
+        loadSessions();
+    </script>
+</body>
+</html>
