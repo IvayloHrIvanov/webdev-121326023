@@ -1,3 +1,4 @@
+import { describe, it, before } from 'node:test';
 import request from 'supertest';
 import { expect } from 'chai';
 import app from '../src/app.js';
@@ -40,7 +41,7 @@ describe('Slice 1 Acceptance Tests', () => {
     const loginRes = await agent
       .post('/api/auth/login')
       .send({ email: 'student@example.com', password: 'password123' });
-    
+
     expect(loginRes.status).to.equal(200);
     expect(loginRes.body.success).to.be.true;
 
