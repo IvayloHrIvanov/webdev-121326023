@@ -33,3 +33,9 @@ One entry per agent session, newest at the bottom. Be honest: what went wrong is
 - Checkpoints: Submitted the query's from the excercise, and observed the tool behavior, after that fixed what did wrong and build on it.
 - Went wrong: The experiment had multiple slice points that were missed or not developed and there were some design and code errors.
 - Changed by hand: Updated the specs manually in 'AGENTS.md' and 'SPEC.MD'.
+
+## 06-11-2026 · Exercise 3 Slice 2 Planning & Setup
+- Goal: Plan the study session scheduling feature, add acceptance criteria for Slice 2, and write the initial failing tests.
+- Autonomy: Drafting acceptance criteria and setting up the test structure for session clash prevention (AC-18 to AC-20).
+- Checkpoints: Review SPEC.md changes before code generation; run `npm test` and ensure tests fail before writing the implementation code; check git diff before every commit.
+- Changed in review: Added implementation of account status (admin, operator, student) (AC-21 to AC-24)

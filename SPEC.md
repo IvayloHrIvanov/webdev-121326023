@@ -89,11 +89,43 @@ Screens:
 - [AC-16] The list of available groups shows the date and time of the next upcoming session for each group in 24h format.
 - [AC-17] All dates and times are displayed in 24h format (e.g., 14:00 instead of 2:00 PM).
 
+### Slice 2: schedule a study session with clash prevention
+- [AC-18] A group owner who submits valid session details via the `schedule_session` form sees the new session created successfully and listed in the database.
+- [AC-19] A group owner who attempts to schedule a session that overlaps with an existing session for the same group is refused with a `409` conflict error and a readable message naming the conflicting session.
+- [AC-20] A user who is not the group owner and attempts to schedule or cancel a session receives a `403` forbidden response.
+- [AC-21] An admin user sees the "Create Group" button in the navigation/dashboard and can successfully create a new study group, whereas a regular student user does not see or have access to the group creation feature.
+- [AC-22] A group owner/operator sees the "Schedule Session" button only for the specific study groups they own, allowing them to create sessions, while non-owners do not have access to schedule sessions for that group.
+- [AC-23] Any signed-in user (regardless of role) can view available groups, click to join or leave a group, and toggle their attendance status ("Attend" / "Will Not Attend") for any session belonging to their joined groups.
+- [AC-24] If a user attempts to perform a role-restricted action via a direct API request (such as a regular member attempting to create a study group or a session), the server responds with a `403 Forbidden` error.
+
 ## Traceability
 <!-- Filled in from Exercise 3 onward: each AC id, and the test that names it. -->
 | Criterion | Test |
-| --- | --- |
-| AC-1 |  |
+| AC-1 | An admin can create a new study group, becoming owner, while non-admin is forbidden (403) |
+| AC-2 | - |
+| AC-3 | - |
+| AC-4 | - |
+| AC-5 | - |
+| AC-6 | - |
+| AC-7 | - |
+| AC-8 | - |
+| AC-9 | A visitor who opens /sessions without signing in is redirected to /login |
+| AC-10 | After signing in, /sessions shows upcoming sessions ordered by date/time (nearest first) |
+| AC-11 | If a scheduled session is deleted from the database, it no longer appears in the list |
+| AC-12 | If a user joins a study group and reloads /sessions, upcoming sessions appear |
+| AC-13 | If all upcoming sessions of a group are removed, no sessions from that group are displayed |
+| AC-14 | After signing in, /sessions shows upcoming sessions ordered by date/time (nearest first) |
+| AC-15 | A user can leave a group |
+| AC-16 | Available groups show next session time |
+| AC-17 | Dates/times are handled in 24h format |
+| AC-18 | A group owner who submits valid session details sees the new session created successfully |
+| AC-19 | A group owner who attempts to schedule an overlapping session is refused with 409 conflict and conflicting session name |
+| AC-20 | A user who is not the group owner (student) receives a 403 forbidden response when attempting to schedule a session |
+| AC-21 | An admin user sees the "Create Group" button and can successfully create a new study group |
+| AC-22 | A group owner/operator sees the "Schedule Session" button only for groups they own |
+| AC-23 | Any signed-in user can view groups, join/leave, and toggle attendance |
+| AC-24 | Role-restricted actions via direct API requests respond with 403 Forbidden |
+| AC-25 | UI/UX is updated with buttons and menus  |
 
 ## Spec vs result
 <!-- After the agent builds the slice: which criteria passed, which it missed or reinterpreted, and what you changed in this spec because of it. -->

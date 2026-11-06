@@ -1,5 +1,6 @@
 import readline from 'readline';
 import fs from 'fs';
+import * as sessionService from '../src/services/sessionService.js';
 
 const rl = readline.createInterface({
   input: process.stdin,
@@ -25,7 +26,7 @@ rl.on('line', (line) => {
             tools: {}
           },
           serverInfo: {
-            name: 'my-mcp-server',
+            name: 'mcp-server-from-scratch',
             version: '1.0.0'
           }
         }
@@ -45,31 +46,52 @@ rl.on('line', (line) => {
         result: {
           tools: [
             {
-              name: 'find_lecture',
-              description: 'Searches the university lecture archives by lecture number. Use this when a colleague needs to find a specific class title and its topics, and it returns a formatted text string containing the lecture details.',
+              name: 'my_groups',
+              description: 'Returns all study groups where the signed-in user is currently a member',
               inputSchema: {
                 type: 'object',
                 properties: {
-                  number: {
-                    type: 'number',
-                    description: 'The lecture number to look up.'
-                  }
+                  userId: { type: 'number', description: 'The authenticated user ID' }
                 },
-                required: ['number']
+                required: ['userId']
               }
             },
             {
-              name: 'get_course_schedule',
-              description: 'Retrieves the weekly timetable and room assignments for a specified course code. Use this when planning schedules or verifying class hours, and it returns a structured list of meeting days, start times, and campus locations.',
+              name: 'upcoming_sessions',
+              description: 'Returns the upcoming study sessions for the user groups, including date, time and course information',
               inputSchema: {
                 type: 'object',
                 properties: {
-                  courseCode: {
-                    type: 'string',
-                    description: 'The unique course code (e.g., CS101).'
-                  }
+                  userId: { type: 'number', description: 'The authenticated user ID' }
                 },
-                required: ['courseCode']
+                required: ['userId']
+              }
+            },
+            {
+              name: 'join_group',
+              description: 'Adds the signed-in user to an open study group that still accepts new members',
+              inputSchema: {
+                type: 'object',
+                properties: {
+                  userId: { type: 'number', description: 'The authenticated user ID' },
+                  groupId: { type: 'number', description: 'The group ID to join' }
+                },
+                required: ['userId', 'groupId']
+              }
+            },
+            {
+              name: 'schedule_session',
+              description: 'Creates a new study session and stores its date, time and topic for a specific group',
+              inputSchema: {
+                type: 'object',
+                properties: {
+                  userId: { type: 'number', description: 'The authenticated user ID / group owner' },
+                  groupId: { type: 'number', description: 'The group ID' },
+                  title: { type: 'string', description: 'Session title/topic' },
+                  startTime: { type: 'string', description: 'Start time ISO string' },
+                  endTime: { type: 'string', description: 'End time ISO string' }
+                },
+                required: ['userId', 'groupId', 'title', 'startTime', 'endTime']
               }
             }
           ]
@@ -82,14 +104,15 @@ rl.on('line', (line) => {
     else if (message.method === 'tools/call') {
       const toolName = message.params?.name;
       const args = message.params?.arguments || {};
+      const userId = args.userId;
 
-      if (toolName !== 'find_lecture' && toolName !== 'get_course_schedule') {
+      if (!userId) {
         const errorResponse = {
           jsonrpc: '2.0',
           id: message.id,
           error: {
             code: -32602,
-            message: `Unknown tool: ${toolName}`
+            message: 'Unauthorized: missing user session / token'
           }
         };
         console.log(JSON.stringify(errorResponse));
@@ -99,34 +122,36 @@ rl.on('line', (line) => {
       let textResult = '';
       let isError = false;
 
-      if (toolName === 'find_lecture') {
-        const fileContent = fs.readFileSync('mcp-server/lectures.json', 'utf8');
-        const lectures = JSON.parse(fileContent);
-
-        const lecture = lectures.find((l) => l.number === args.number);
-
-        if (lecture) {
-          textResult = `Lecture ${lecture.number}: ${lecture.title}. Topics: ${lecture.topics}`;
-          isError = false;
-        } else {
-          textResult = `Lecture ${args.number} not found.`;
-          isError = true;
+      try {
+        if (toolName === 'my_groups') {
+          const groups = sessionService.getAllGroups(userId);
+          const userGroups = groups.filter(g => g.is_member);
+          textResult = JSON.stringify(userGroups);
         }
-      }
-
-      else if (toolName === 'get_course_schedule') {
-        const schedules = {
-          'CS101': 'CS101 meets Mondays and Wednesdays at 10:00 AM in Hall A.',
-          'MATH201': 'MATH201 meets Tuesdays and Thursdays at 2:00 PM in Room B.'
-        };
-
-        if (schedules[args.courseCode]) {
-          textResult = schedules[args.courseCode];
-          isError = false;
-        } else {
-          textResult = `Schedule not found for course: ${args.courseCode}`;
-          isError = true;
+        else if (toolName === 'upcoming_sessions') {
+          const sessions = sessionService.getUpcomingSessions(userId);
+          textResult = JSON.stringify(sessions);
         }
+        else if (toolName === 'join_group') {
+          sessionService.joinGroup(userId, args.groupId);
+          textResult = 'You have successfully joined the group';
+        }
+        else if (toolName === 'schedule_session') {
+          const sessionId = sessionService.scheduleSession(userId, {
+            groupId: args.groupId,
+            title: args.title,
+            startTime: args.startTime,
+            endTime: args.endTime
+          });
+          textResult = `Session successfully scheduled with ID ${sessionId}`;
+        }
+        else {
+          isError = true;
+          textResult = `Unknown tool: ${toolName}`;
+        }
+      } catch (err) {
+        isError = true;
+        textResult = err.message;
       }
 
       const response = {

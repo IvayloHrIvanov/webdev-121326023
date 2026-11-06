@@ -2,22 +2,82 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Upcoming Study Sessions</title>
+    <title>Study Groups & Sessions Dashboard</title>
     <style>
-        body { font-family: sans-serif; margin: 40px; background: #f4f4f9; }
-        .container { max-width: 900px; margin: auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); margin-bottom: 20px; }
-        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        body { font-family: sans-serif; margin: 30px; background: #f4f4f9; color: #333; }
+        .container { max-width: 950px; margin: auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); margin-bottom: 20px; }
+        header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; border-bottom: 1px solid #ddd; padding-bottom: 10px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 15px; }
         th, td { padding: 12px; border-bottom: 1px solid #ddd; text-align: left; }
         th { background: #007bff; color: white; }
-        button { padding: 6px 12px; color: white; border: none; border-radius: 4px; cursor: pointer; min-width: 120px; }
+        button { padding: 6px 12px; color: white; border: none; border-radius: 4px; cursor: pointer; margin-right: 5px; }
         .btn-attend { background: #28a745; }
         .btn-attend:hover { background: #218838; }
         .btn-not-attend { background: #dc3545; }
         .btn-not-attend:hover { background: #c82333; }
-        .badge { background: #6c757d; color: white; padding: 4px 8px; border-radius: 4px; font-size: 12px; }
+        .btn-primary { background: #007bff; }
+        .btn-primary:hover { background: #0056b3; }
+        .btn-success { background: #17a2b8; }
+        .btn-success:hover { background: #138496; }
+        .form-group { margin-bottom: 10px; }
+        label { display: block; margin-bottom: 5px; font-weight: bold; font-size: 14px; }
+        input[type="text"], input[type="datetime-local"], select { width: 100%; padding: 8px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px; }
+        .error { color: #dc3545; margin-top: 5px; font-size: 14px; }
+        .success { color: #28a745; margin-top: 5px; font-size: 14px; }
+        .admin-section, .schedule-section { background: #f8f9fa; padding: 15px; border-radius: 6px; margin-top: 15px; border: 1px solid #e9ecef; }
+        .operator-row { display: flex; align-items: center; margin-bottom: 5px; }
+        .operator-row select { flex: 1; margin-right: 5px; }
     </style>
 </head>
 <body>
+    <div class="container">
+        <header>
+            <div>
+                <h2 id="user-greeting" style="margin: 0;">Dashboard</h2>
+                <small id="user-role" style="color: #6c757d;"></small>
+            </div>
+            <button class="btn-not-attend" onclick="logout()">Sign Out</button>
+        </header>
+
+        <!-- Admin Group Creation Form -->
+        <div id="admin-group-container" style="display: none;" class="admin-section">
+            <h3>Create New Study Group (Admin Only)</h3>
+            <div id="group-error" class="error"></div>
+            <div id="group-success" class="success"></div>
+            <form id="create-group-form">
+                <div class="form-group">
+                    <label>Group Name:</label>
+                    <input type="text" id="group-name" required placeholder="e.g., Advanced Calculus">
+                </div>
+                <div class="form-group">
+                    <label>Course Name:</label>
+                    <input type="text" id="course-name" required placeholder="e.g., MATH301">
+                </div>
+                <button type="submit" class="btn-primary">Create Group</button>
+            </form>
+        </div>
+
+        <!-- Admin Operator Permissions Window -->
+        <div id="admin-permissions-container" style="display: none;" class="admin-section">
+            <h3>Operator Permissions Management (Admin Only)</h3>
+            <p>Assign multiple operators/owners (Operator accounts only) to control specific groups:</p>
+            <div id="perm-error" class="error"></div>
+            <div id="perm-success" class="success"></div>
+            <table id="permissions-table">
+                <thead>
+                    <tr>
+                        <th>Group Name</th>
+                        <th>Assigned Operators</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <!-- Populated via JS -->
+                </tbody>
+            </table>
+        </div>
+    </div>
+
     <div class="container">
         <h2>Upcoming Study Sessions</h2>
         <table id="sessions-table">
@@ -25,8 +85,8 @@
                 <tr>
                     <th>Title</th>
                     <th>Course</th>
-                    <th>Date & Time</th>
-                    <th>Action</th>
+                    <th>Date & Time (24h)</th>
+                    <th>Actions</th>
                 </tr>
             </thead>
             <tbody>
@@ -43,7 +103,7 @@
                     <th>Group Name</th>
                     <th>Course</th>
                     <th>Next Session</th>
-                    <th>Action</th>
+                    <th>Actions / Management</th>
                 </tr>
             </thead>
             <tbody>
@@ -53,6 +113,11 @@
     </div>
 
     <script>
+        let currentUser = null;
+        let allUsers = [];
+        let validOperators = [];
+        let groupOperatorsMap = {}; // groupId -> array of userIds (or null/empty)
+
         function format24h(dateStr) {
             if (!dateStr) return 'No sessions scheduled';
             const date = new Date(dateStr);
@@ -66,13 +131,47 @@
             }).format(date);
         }
 
-        async function loadData() {
-            // Load sessions
-            const sRes = await fetch('/api/sessions');
-            if (sRes.redirected || sRes.status === 401) {
+        async function init() {
+            const meRes = await fetch('/api/auth/me');
+            if (meRes.status === 401) {
                 window.location.href = '/login';
                 return;
             }
+            currentUser = await meRes.json();
+            document.getElementById('user-greeting').innerText = `Welcome, ${currentUser.email}`;
+            document.getElementById('user-role').innerText = `Role: ${currentUser.role.toUpperCase()}`;
+
+            if (currentUser.role === 'admin') {
+                document.getElementById('admin-group-container').style.display = 'block';
+                document.getElementById('admin-permissions-container').style.display = 'block';
+                const usersRes = await fetch('/api/users');
+                if (usersRes.ok) {
+                    allUsers = await usersRes.json();
+                    // Exclude admin from group operator choices (admins have full rights by default)
+                    validOperators = allUsers.filter(u => u.role === 'operator');
+                }
+            }
+
+            loadData();
+        }
+
+        async function loadData() {
+            const gRes = await fetch('/api/groups');
+            const groups = await gRes.json();
+
+            if (currentUser.role === 'admin') {
+                for (const g of groups) {
+                    if (!groupOperatorsMap[g.id]) {
+                        const opRes = await fetch(`/api/groups/${g.id}/operators`);
+                        if (opRes.ok) {
+                            const ops = await opRes.json();
+                            groupOperatorsMap[g.id] = ops.map(o => o.user_id);
+                        }
+                    }
+                }
+            }
+
+            const sRes = await fetch('/api/sessions');
             const sessions = await sRes.json();
             const sTbody = document.querySelector('#sessions-table tbody');
             sTbody.innerHTML = '';
@@ -82,31 +181,296 @@
                 sessions.forEach(s => {
                     const tr = document.createElement('tr');
                     const isAttending = s.attendance_status === 'attending';
-                    const actionHtml = isAttending
-                        ? `<button class="btn-not-attend" onclick="toggleSessionAttendance(${s.id}, 'not_attending')">Not Attend</button>`
+                    let actionHtml = isAttending
+                        ? `<button class="btn-not-attend" onclick="toggleSessionAttendance(${s.id}, 'not_attending')">Will Not Attend</button>`
                         : `<button class="btn-attend" onclick="toggleSessionAttendance(${s.id}, 'attending')">Attend</button>`;
+
+                    const groupOps = groupOperatorsMap[s.group_id] || [s.owner_id];
+                    const canDeleteSession = currentUser.role === 'admin' || groupOps.includes(currentUser.id);
+                    if (canDeleteSession) {
+                        actionHtml += `<button class="btn-not-attend" onclick="deleteSession(${s.id})">Delete Session</button>`;
+                    }
 
                     tr.innerHTML = `<td>${s.title}</td><td>${s.course_name}</td><td>${format24h(s.start_time)}</td><td>${actionHtml}</td>`;
                     sTbody.appendChild(tr);
                 });
             }
 
-            // Load groups
-            const gRes = await fetch('/api/groups');
-            const groups = await gRes.json();
             const gTbody = document.querySelector('#groups-table tbody');
             gTbody.innerHTML = '';
+
+            let permTbody = document.querySelector('#permissions-table tbody');
+            if (permTbody) permTbody.innerHTML = '';
+
             groups.forEach(g => {
                 const tr = document.createElement('tr');
-                let actionHtml = '';
-                if (g.is_member) {
-                    actionHtml = `<button class="btn-not-attend" onclick="toggleMembership(${g.id}, true)">Leave</button>`;
-                } else {
-                    actionHtml = `<button class="btn-attend" onclick="toggleMembership(${g.id}, false)">Join</button>`;
+                let memberAction = g.is_member
+                    ? `<button class="btn-not-attend" onclick="toggleMembership(${g.id}, true)">Leave</button>`
+                    : `<button class="btn-attend" onclick="toggleMembership(${g.id}, false)">Join</button>`;
+
+                if (currentUser.role === 'admin') {
+                    memberAction += `<button class="btn-not-attend" onclick="deleteGroup(${g.id})">Delete Group</button>`;
                 }
-                tr.innerHTML = `<td>${g.name}</td><td>${g.course_name}</td><td>${format24h(g.next_session)}</td><td>${actionHtml}</td>`;
+
+                let scheduleFormHtml = '';
+                const groupOps = groupOperatorsMap[g.id] || [g.owner_id];
+                const canSchedule = currentUser.role === 'admin' || (currentUser.role === 'operator' && groupOps.includes(currentUser.id));
+                if (canSchedule) {
+                    scheduleFormHtml = `
+                        <div class="schedule-section">
+                            <h4>Schedule Session</h4>
+                            <form onsubmit="scheduleSession(event, ${g.id})">
+                                <div class="form-group">
+                                    <label>Session Title:</label>
+                                    <input type="text" id="title-${g.id}" required placeholder="e.g. Chapter 1 Review">
+                                </div>
+                                <div class="form-group">
+                                    <label>Start Time (24h):</label>
+                                    <input type="datetime-local" id="start-${g.id}" required>
+                                </div>
+                                <div class="form-group">
+                                    <label>End Time (24h):</label>
+                                    <input type="datetime-local" id="end-${g.id}" required>
+                                </div>
+                                <button type="submit" class="btn-primary">Schedule</button>
+                            </form>
+                        </div>
+                    `;
+                }
+
+                tr.innerHTML = `
+                    <td>${g.name}</td>
+                    <td>${g.course_name}</td>
+                    <td>${format24h(g.next_session)}</td>
+                    <td>
+                        ${memberAction}
+                        ${scheduleFormHtml}
+                    </td>
+                `;
                 gTbody.appendChild(tr);
+
+                // Populate admin permissions table
+                if (currentUser.role === 'admin' && permTbody) {
+                    const ptr = document.createElement('tr');
+                    const assignedOps = groupOperatorsMap[g.id] !== undefined ? groupOperatorsMap[g.id] : [g.owner_id];
+                    const effectiveOps = assignedOps.length > 0 ? assignedOps : [''];
+                    
+                    let operatorsRowsHtml = `<div id="operator-rows-${g.id}">`;
+                    effectiveOps.forEach((opId, index) => {
+                        const totalRows = effectiveOps.length;
+                        const hasNoOpOption = totalRows === 1 && index === 0;
+                        
+                        const currentSelectedIds = effectiveOps;
+                        let optionsHtml = hasNoOpOption ? `<option value="">-- No Operator --</option>` : '';
+                        
+                        validOperators.forEach(u => {
+                            const isSelected = u.id === opId;
+                            const isAlreadyUsedElsewhere = currentSelectedIds.includes(u.id) && !isSelected;
+                            if (!isAlreadyUsedElsewhere) {
+                                optionsHtml += `<option value="${u.id}" ${isSelected ? 'selected' : ''}>${u.email} (${u.role})</option>`;
+                            }
+                        });
+                        
+                        operatorsRowsHtml += `
+                            <div class="operator-row" data-index="${index}">
+                                <select class="operator-select-${g.id}" onchange="onOperatorSelectChange(${g.id})">
+                                    ${optionsHtml}
+                                </select>
+                                <button type="button" class="btn-not-attend" onclick="removeOperatorRow(${g.id}, this)">Delete</button>
+                            </div>
+                        `;
+                    });
+                    operatorsRowsHtml += `</div>`;
+                    operatorsRowsHtml += `<button type="button" class="btn-success" style="margin-top: 5px;" onclick="addOperatorRow(${g.id})">+ Add Operator</button>`;
+                    operatorsRowsHtml += `<button type="button" class="btn-primary" style="margin-top: 5px;" onclick="saveGroupOperators(${g.id})">Save Operators</button>`;
+
+                    ptr.innerHTML = `
+                        <td>${g.name}</td>
+                        <td>${operatorsRowsHtml}</td>
+                        <td></td>
+                    `;
+                    permTbody.appendChild(ptr);
+                }
             });
+        }
+
+        function updateGroupOperatorsMapFromDOM(groupId) {
+            const selects = document.querySelectorAll(`.operator-select-${groupId}`);
+            const userIds = [];
+            selects.forEach(sel => {
+                if (sel.value !== '') {
+                    userIds.push(parseInt(sel.value));
+                }
+            });
+            groupOperatorsMap[groupId] = userIds;
+        }
+
+        function onOperatorSelectChange(groupId) {
+            updateGroupOperatorsMapFromDOM(groupId);
+            renderPermissionsTableRows();
+        }
+
+        function addOperatorRow(groupId) {
+            updateGroupOperatorsMapFromDOM(groupId);
+            if (!groupOperatorsMap[groupId]) {
+                groupOperatorsMap[groupId] = [];
+            }
+            // Push empty string '' so it explicitly defaults to unassigned / empty (no auto-assignment)
+            groupOperatorsMap[groupId].push('');
+            renderPermissionsTableRows();
+        }
+
+        function removeOperatorRow(groupId, btn) {
+            updateGroupOperatorsMapFromDOM(groupId);
+            const container = document.getElementById(`operator-rows-${groupId}`);
+            if (container.children.length <= 1) {
+                // If removing the last remaining row, reset to empty/no operator
+                groupOperatorsMap[groupId] = [];
+                renderPermissionsTableRows();
+                return;
+            }
+            const row = btn.parentElement;
+            const index = Array.from(container.children).indexOf(row);
+            if (index > -1) {
+                groupOperatorsMap[groupId].splice(index, 1);
+            }
+            renderPermissionsTableRows();
+        }
+
+        function renderPermissionsTableRows() {
+            const permTbody = document.querySelector('#permissions-table tbody');
+            if (!permTbody) return;
+            fetch('/api/groups').then(r => r.json()).then(groups => {
+                permTbody.innerHTML = '';
+                groups.forEach(g => {
+                    const ptr = document.createElement('tr');
+                    const assignedOps = groupOperatorsMap[g.id] !== undefined ? groupOperatorsMap[g.id] : [g.owner_id];
+                    const effectiveOps = assignedOps.length > 0 ? assignedOps : [''];
+                    
+                    let operatorsRowsHtml = `<div id="operator-rows-${g.id}">`;
+                    effectiveOps.forEach((opId, index) => {
+                        const totalRows = effectiveOps.length;
+                        const hasNoOpOption = totalRows === 1 && index === 0;
+                        
+                        let optionsHtml = hasNoOpOption ? `<option value="">-- No Operator --</option>` : '';
+                        validOperators.forEach(u => {
+                            const isSelected = u.id === opId;
+                            const isAlreadyUsedElsewhere = effectiveOps.includes(u.id) && !isSelected;
+                            if (!isAlreadyUsedElsewhere) {
+                                optionsHtml += `<option value="${u.id}" ${isSelected ? 'selected' : ''}>${u.email} (${u.role})</option>`;
+                            }
+                        });
+                        
+                        operatorsRowsHtml += `
+                            <div class="operator-row" data-index="${index}">
+                                <select class="operator-select-${g.id}" onchange="onOperatorSelectChange(${g.id})">
+                                    ${optionsHtml}
+                                </select>
+                                <button type="button" class="btn-not-attend" onclick="removeOperatorRow(${g.id}, this)">Delete</button>
+                            </div>
+                        `;
+                    });
+                    operatorsRowsHtml += `</div>`;
+                    operatorsRowsHtml += `<button type="button" class="btn-success" style="margin-top: 5px;" onclick="addOperatorRow(${g.id})">+ Add Operator</button>`;
+                    operatorsRowsHtml += `<button type="button" class="btn-primary" style="margin-top: 5px;" onclick="saveGroupOperators(${g.id})">Save Operators</button>`;
+
+                    ptr.innerHTML = `
+                        <td>${g.name}</td>
+                        <td>${operatorsRowsHtml}</td>
+                        <td></td>
+                    `;
+                    permTbody.appendChild(ptr);
+                });
+            });
+        }
+
+        async function saveGroupOperators(groupId) {
+            updateGroupOperatorsMapFromDOM(groupId);
+            const userIds = groupOperatorsMap[groupId] || [];
+
+            const res = await fetch(`/api/groups/${groupId}/operators`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ userIds })
+            });
+            const data = await res.json();
+            if (res.ok && data.success) {
+                alert('Group operators updated successfully!');
+                loadData();
+            } else {
+                alert('Failed to update operators: ' + (data.error || 'Unknown error'));
+            }
+        }
+
+        document.getElementById('create-group-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            document.getElementById('group-error').innerText = '';
+            document.getElementById('group-success').innerText = '';
+            const name = document.getElementById('group-name').value;
+            const courseName = document.getElementById('course-name').value;
+
+            const res = await fetch('/api/groups', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name, courseName })
+            });
+            const data = await res.json();
+            if (res.ok && data.success) {
+                document.getElementById('group-success').innerText = 'Study group created successfully!';
+                document.getElementById('create-group-form').reset();
+                loadData();
+            } else {
+                document.getElementById('group-error').innerText = data.error || 'Failed to create group';
+            }
+        });
+
+        async function deleteSession(sessionId) {
+            if (!confirm('Are you sure you want to delete this study session?')) return;
+            const res = await fetch(`/api/sessions/${sessionId}`, {
+                method: 'DELETE'
+            });
+            if (res.ok) {
+                loadData();
+            } else {
+                const data = await res.json();
+                alert('Failed to delete session: ' + (data.error || 'Unauthorized'));
+            }
+        }
+
+        async function deleteGroup(groupId) {
+            if (!confirm('Are you sure you want to delete this study group and its sessions?')) return;
+            const res = await fetch(`/api/groups/${groupId}`, {
+                method: 'DELETE'
+            });
+            if (res.ok) {
+                loadData();
+            } else {
+                const data = await res.json();
+                alert('Failed to delete group: ' + (data.error || 'Unauthorized'));
+            }
+        }
+
+        async function scheduleSession(e, groupId) {
+            e.preventDefault();
+            const title = document.getElementById(`title-${groupId}`).value;
+            const startInput = document.getElementById(`start-${groupId}`).value;
+            const endInput = document.getElementById(`end-${groupId}`).value;
+
+            const startTime = startInput.replace('T', ' ') + ':00';
+            const endTime = endInput.replace('T', ' ') + ':00';
+
+            const res = await fetch('/api/sessions', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ groupId, title, startTime, endTime })
+            });
+            const data = await res.json();
+            if (res.ok && data.success) {
+                alert('Session scheduled successfully!');
+                loadData();
+            } else {
+                alert('Error scheduling session: ' + (data.error || 'Unknown error'));
+            }
         }
 
         async function toggleMembership(groupId, isMember) {
@@ -132,11 +496,17 @@
             if (res.ok) {
                 loadData();
             } else {
-                alert('Failed to update session attendance');
+                const data = await res.json();
+                alert('Failed to update session attendance: ' + (data.error || 'Unknown error'));
             }
         }
 
-        loadData();
+        async function logout() {
+            await fetch('/api/auth/logout', { method: 'POST' });
+            window.location.href = '/login';
+        }
+
+        init();
     </script>
 </body>
 </html>

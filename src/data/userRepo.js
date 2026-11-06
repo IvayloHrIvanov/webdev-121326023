@@ -7,5 +7,10 @@ export function findUserByEmail(email) {
 
 export function findUserById(id) {
   const db = getDb();
-  return db.get('SELECT id, email, created_at FROM users WHERE id = ?', [id]);
+  return db.get('SELECT id, email, role, created_at FROM users WHERE id = ?', [id]);
+}
+
+export function getAllUsers() {
+  const db = getDb();
+  return db.all('SELECT id, email, role FROM users');
 }
