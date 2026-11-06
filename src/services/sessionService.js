@@ -62,10 +62,10 @@ export async function scheduleSession(userId, { groupId, title, startTime, endTi
     throw err;
   }
 
-  // Authorization check (AC-20): Admin can schedule, operator must be assigned
+  // Authorization check (AC-20): Admin can schedule, or assigned group operator
   const isAdmin = user.role === 'admin';
   const isOperator = sessionRepo.isGroupOperator(groupId, userId);
-  if (!isAdmin && (!isOperator || user.role !== 'operator')) {
+  if (!isAdmin && !isOperator) {
     const err = new Error('Forbidden: Only the assigned group operator or admin can schedule sessions');
     err.status = 403;
     throw err;
@@ -97,7 +97,7 @@ export async function deleteSession(userId, sessionId) {
   }
   const isAdmin = user.role === 'admin';
   const isOperator = sessionRepo.isGroupOperator(session.group_id, userId);
-  if (!isAdmin && (!isOperator || user.role !== 'operator')) {
+  if (!isAdmin && !isOperator) {
     const err = new Error('Forbidden: Only the assigned group operator or admin can delete sessions');
     err.status = 403;
     throw err;

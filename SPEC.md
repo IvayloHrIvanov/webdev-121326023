@@ -25,7 +25,7 @@ Study groups.
 <!-- Which model, which modality, and what it does for a user.
      Name three things or the check fails: the input it receives, the output it produces,
      and what happens when the model is slow, rate-limited or wrong. -->
-- Model: gemini-3-flash-lite, gemini-3.5-flash-lite, gemma-4-31b-it
+- Model: gemini-3-flash-lite, gemini-3.5-flash-lite
 - Input: The notes from a completed study session, entered by a group member.
 - Output: A two-line summary and three tags selected from a predefined list of course topics.
 - When it fails: If the model is unavailable, slow, rate-limited or returns invalid tags, the notes remain unchanged and the user is asked to enter a summary and tags manually. Nothing is saved automatically.
