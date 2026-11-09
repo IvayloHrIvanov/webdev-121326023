@@ -29,19 +29,25 @@ CREATE TABLE IF NOT EXISTS sessions (
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Add this to your schema definition
+CREATE TABLE IF NOT EXISTS session_attendance (
+    user_id INTEGER REFERENCES users(id),
+    session_id INTEGER REFERENCES sessions(id) ON DELETE CASCADE,
+    status TEXT NOT NULL CHECK(status IN ('attending', 'not_attending')),
+    PRIMARY KEY (user_id, session_id)
+);
+
 -- Seed data
 -- Passwords are 'password123' hashed with bcrypt (cost 10)
--- $2b$10$nOUIs5kJ7kp44yvj/T366.S.OAn7S88XmN9s4T6D8j5O.v9u/kG6.
+INSERT OR IGNORE INTO users (id, email, password_hash) VALUES
+(1, 'student@example.com', '$2b$10$9fCCBd6Vn.Lv8zSQLDSZeu9csxN08sal0NQsVdb.KQ.axuWhR6YZe'),
+(2, 'organizer@example.com', '$2b$10$9fCCBd6Vn.Lv8zSQLDSZeu9csxN08sal0NQsVdb.KQ.axuWhR6YZe');
 
-INSERT INTO users (email, password_hash) VALUES 
-('student@example.com', '$2b$10$nOUIs5kJ7kp44yvj/T366.S.OAn7S88XmN9s4T6D8j5O.v9u/kG6.'),
-('organizer@example.com', '$2b$10$nOUIs5kJ7kp44yvj/T366.S.OAn7S88XmN9s4T6D8j5O.v9u/kG6.');
+INSERT OR IGNORE INTO groups (id, name, course_name, owner_id) VALUES
+(1, 'Math Study Group', 'Mathematics 101', 2),
+(2, 'CS Basics', 'Computer Science 50', 2);
 
-INSERT INTO groups (name, course_name, owner_id) VALUES 
-('Math Study Group', 'Mathematics 101', 2),
-('CS Basics', 'Computer Science 50', 2);
-
-INSERT INTO memberships (user_id, group_id) VALUES 
+INSERT OR IGNORE INTO memberships (user_id, group_id) VALUES
 (1, 1), -- Student joins Math
 (1, 2), -- Student joins CS
 (2, 1), -- Organizer is in Math
@@ -49,8 +55,8 @@ INSERT INTO memberships (user_id, group_id) VALUES
 
 -- Some sessions in the future, some in the past
 -- SQLite date functions: datetime('now', '+2 days')
-INSERT INTO sessions (group_id, title, start_time) VALUES 
-(1, 'Algebra Review', datetime('now', '+2 days')),
-(1, 'Calculus Workshop', datetime('now', '+5 days')),
-(2, 'Binary Trees', datetime('now', '+1 day')),
-(2, 'Intro to C', datetime('now', '-1 day')); -- Past session
+INSERT OR IGNORE INTO sessions (id, group_id, title, start_time) VALUES
+(1, 1, 'Algebra Review', datetime('now', '+2 days')),
+(2, 1, 'Calculus Workshop', datetime('now', '+5 days')),
+(3, 2, 'Binary Trees', datetime('now', '+1 day')),
+(4, 2, 'Intro to C', datetime('now', '-1 day')); -- Past session
