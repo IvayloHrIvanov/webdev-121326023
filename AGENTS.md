@@ -59,7 +59,6 @@ that talks to the database directly is a second, unguarded way into your data: n
 - changing an authentication or authorization rule
 - adding, renaming or removing an MCP tool
 - changing a coverage threshold
-- sending user data to a third-party model
 
 ## Never
 - commit secrets, passwords, API keys or an OAuth client secret
