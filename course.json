@@ -5,5 +5,14 @@
   "mcp": "npm run mcp",
 
   "//liveUrl": "Exercise 4. Where your deployed application answers, with no trailing slash.",
-  "liveUrl": ""
+  "liveUrl": "",
+
+  "lectures": [
+    { "number": 1, "title": "Lecture 1", "content": "Introduction to Model Context Protocol" },
+    { "number": 2, "title": "Lecture 2", "content": "MCP Tools and Schemas" },
+    { "number": 3, "title": "Lecture 3", "content": "Resources and Prompts" },
+    { "number": 4, "title": "Lecture 4", "content": "Advanced Server Architecture" },
+    { "number": 5, "title": "Lecture 5", "content": "Details and content of lecture 5..." },
+    { "number": 6, "title": "Lecture 6", "content": "Error Handling and Testing" }
+  ]
 }
