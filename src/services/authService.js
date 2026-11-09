@@ -10,5 +10,5 @@ export async function authenticateUser(email, password) {
   if (!match) {
     return null;
   }
-  return { id: user.id, email: user.email };
+  return { id: user.id, email: user.email, role: user.role };
 }
