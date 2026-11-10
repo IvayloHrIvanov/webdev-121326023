@@ -20,16 +20,16 @@ describe('New Features Acceptance Tests', () => {
   before(async () => {
     const db = getDb();
     const hashedPassword = await bcrypt.hash('password123', 10);
-    const userRes = db.run('INSERT INTO users (email, password_hash, role) VALUES (?, ?, ?)', [EMAIL, hashedPassword, 'student']);
+    const userRes = await db.run('INSERT INTO users (email, password_hash, role) VALUES (?, ?, ?) RETURNING id', [EMAIL, hashedPassword, 'student']);
     userId = userRes.lastID;
 
-    const adminRes = db.run('INSERT INTO users (email, password_hash, role) VALUES (?, ?, ?)', [ADMIN_EMAIL, hashedPassword, 'admin']);
+    const adminRes = await db.run('INSERT INTO users (email, password_hash, role) VALUES (?, ?, ?) RETURNING id', [ADMIN_EMAIL, hashedPassword, 'admin']);
     adminId = adminRes.lastID;
 
-    const groupRes = db.run('INSERT INTO groups (name, course_name, owner_id) VALUES (?, ?, ?)', ['Math Group NF', 'Math 101', userId]);
+    const groupRes = await db.run('INSERT INTO groups (name, course_name, owner_id) VALUES (?, ?, ?) RETURNING id', ['Math Group NF', 'Math 101', userId]);
     mathGroupId = groupRes.lastID;
 
-    db.run('INSERT INTO sessions (group_id, title, start_time, end_time) VALUES (?, ?, ?, ?)', [mathGroupId, 'Algebra Review NF', '2030-01-01 14:30:00', '2030-01-01 16:00:00']);
+    await db.run('INSERT INTO sessions (group_id, title, start_time, end_time) VALUES (?, ?, ?, ?)', [mathGroupId, 'Algebra Review NF', '2030-01-01 14:30:00', '2030-01-01 16:00:00']);
 
     agent = request.agent(app);
     await agent.post('/api/auth/login').send({ email: EMAIL, password: 'password123' });
@@ -41,19 +41,19 @@ describe('New Features Acceptance Tests', () => {
   after(async () => {
     const db = getDb();
     if (mathGroupId) {
-      db.run('DELETE FROM sessions WHERE group_id = ?', [mathGroupId]);
-      db.run('DELETE FROM memberships WHERE group_id = ?', [mathGroupId]);
-      db.run('DELETE FROM groups WHERE id = ?', [mathGroupId]);
+      await db.run('DELETE FROM sessions WHERE group_id = ?', [mathGroupId]);
+      await db.run('DELETE FROM memberships WHERE group_id = ?', [mathGroupId]);
+      await db.run('DELETE FROM groups WHERE id = ?', [mathGroupId]);
     }
     if (adminId) {
-      db.run('DELETE FROM sessions WHERE group_id IN (SELECT id FROM groups WHERE owner_id = ?)', [adminId]);
-      db.run('DELETE FROM memberships WHERE user_id = ? OR group_id IN (SELECT id FROM groups WHERE owner_id = ?)', [adminId, adminId]);
-      db.run('DELETE FROM groups WHERE owner_id = ?', [adminId]);
-      db.run('DELETE FROM users WHERE id = ?', [adminId]);
+      await db.run('DELETE FROM sessions WHERE group_id IN (SELECT id FROM groups WHERE owner_id = ?)', [adminId]);
+      await db.run('DELETE FROM memberships WHERE user_id = ? OR group_id IN (SELECT id FROM groups WHERE owner_id = ?)', [adminId, adminId]);
+      await db.run('DELETE FROM groups WHERE owner_id = ?', [adminId]);
+      await db.run('DELETE FROM users WHERE id = ?', [adminId]);
     }
     if (userId) {
-      db.run('DELETE FROM memberships WHERE user_id = ?', [userId]);
-      db.run('DELETE FROM users WHERE id = ?', [userId]);
+      await db.run('DELETE FROM memberships WHERE user_id = ?', [userId]);
+      await db.run('DELETE FROM users WHERE id = ?', [userId]);
     }
   });
 

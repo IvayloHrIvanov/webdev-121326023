@@ -1,16 +1,16 @@
 import { getDb } from './db.js';
 
-export function findUserByEmail(email) {
+export async function findUserByEmail(email) {
   const db = getDb();
-  return db.get('SELECT * FROM users WHERE email = ?', [email]);
+  return await db.get('SELECT * FROM users WHERE email = ?', [email]);
 }
 
-export function findUserById(id) {
+export async function findUserById(id) {
   const db = getDb();
-  return db.get('SELECT id, email, role, created_at FROM users WHERE id = ?', [id]);
+  return await db.get('SELECT id, email, role, created_at FROM users WHERE id = ?', [id]);
 }
 
-export function getAllUsers() {
+export async function getAllUsers() {
   const db = getDb();
-  return db.all('SELECT id, email, role FROM users');
+  return await db.all('SELECT id, email, role FROM users');
 }

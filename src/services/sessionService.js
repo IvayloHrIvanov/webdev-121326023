@@ -1,24 +1,29 @@
 import * as sessionRepo from '../data/sessionRepo.js';
 import * as userRepo from '../data/userRepo.js';
+import { checkDbHealth } from '../data/db.js';
 
-export function getUpcomingSessions(userId) {
-  return sessionRepo.getUpcomingSessionsForUser(userId);
+export async function checkHealth() {
+  return await checkDbHealth();
 }
 
-export function getAllGroups(userId) {
-  return sessionRepo.getAllGroupsForUser(userId);
+export async function getUpcomingSessions(userId) {
+  return await sessionRepo.getUpcomingSessionsForUser(userId);
 }
 
-export function joinGroup(userId, groupId) {
-  return sessionRepo.addMembership(userId, groupId);
+export async function getAllGroups(userId) {
+  return await sessionRepo.getAllGroupsForUser(userId);
 }
 
-export function leaveGroup(userId, groupId) {
-  return sessionRepo.removeMembership(userId, groupId);
+export async function joinGroup(userId, groupId) {
+  return await sessionRepo.addMembership(userId, groupId);
 }
 
-export function updateSessionAttendance(userId, sessionId, status) {
-  return sessionRepo.setSessionAttendance(userId, sessionId, status);
+export async function leaveGroup(userId, groupId) {
+  return await sessionRepo.removeMembership(userId, groupId);
+}
+
+export async function updateSessionAttendance(userId, sessionId, status) {
+  return await sessionRepo.setSessionAttendance(userId, sessionId, status);
 }
 
 export async function createGroup(userId, { name, courseName }) {
@@ -27,13 +32,13 @@ export async function createGroup(userId, { name, courseName }) {
     err.status = 400;
     throw err;
   }
-  const user = userRepo.findUserById(userId);
+  const user = await userRepo.findUserById(userId);
   if (!user || user.role !== 'admin') {
     const err = new Error('Forbidden: Only admins can create study groups');
     err.status = 403;
     throw err;
   }
-  return sessionRepo.createGroup(name, courseName, userId);
+  return await sessionRepo.createGroup(name, courseName, userId);
 }
 
 export async function scheduleSession(userId, { groupId, title, startTime, endTime }) {
@@ -48,14 +53,14 @@ export async function scheduleSession(userId, { groupId, title, startTime, endTi
     throw err;
   }
 
-  const user = userRepo.findUserById(userId);
+  const user = await userRepo.findUserById(userId);
   if (!user) {
     const err = new Error('Unauthorized');
     err.status = 401;
     throw err;
   }
 
-  const group = sessionRepo.getGroupById(groupId);
+  const group = await sessionRepo.getGroupById(groupId);
   if (!group) {
     const err = new Error('Group not found');
     err.status = 404;
@@ -64,7 +69,7 @@ export async function scheduleSession(userId, { groupId, title, startTime, endTi
 
   // Authorization check (AC-20): Admin can schedule, or assigned group operator
   const isAdmin = user.role === 'admin';
-  const isOperator = sessionRepo.isGroupOperator(groupId, userId);
+  const isOperator = await sessionRepo.isGroupOperator(groupId, userId);
   if (!isAdmin && !isOperator) {
     const err = new Error('Forbidden: Only the assigned group operator or admin can schedule sessions');
     err.status = 403;
@@ -72,77 +77,77 @@ export async function scheduleSession(userId, { groupId, title, startTime, endTi
   }
 
   // Clash check (AC-19)
-  const conflict = sessionRepo.getConflictingSession(groupId, startTime, endTime);
+  const conflict = await sessionRepo.getConflictingSession(groupId, startTime, endTime);
   if (conflict) {
     const err = new Error(`Conflict: Overlaps with existing session "${conflict.title}"`);
     err.status = 409;
     throw err;
   }
 
-  return sessionRepo.createSession(groupId, title, startTime, endTime);
+  return await sessionRepo.createSession(groupId, title, startTime, endTime);
 }
 
 export async function deleteSession(userId, sessionId) {
-  const user = userRepo.findUserById(userId);
+  const user = await userRepo.findUserById(userId);
   if (!user) {
     const err = new Error('Unauthorized');
     err.status = 401;
     throw err;
   }
-  const session = sessionRepo.getSessionById(sessionId);
+  const session = await sessionRepo.getSessionById(sessionId);
   if (!session) {
     const err = new Error('Session not found');
     err.status = 404;
     throw err;
   }
   const isAdmin = user.role === 'admin';
-  const isOperator = sessionRepo.isGroupOperator(session.group_id, userId);
+  const isOperator = await sessionRepo.isGroupOperator(session.group_id, userId);
   if (!isAdmin && !isOperator) {
     const err = new Error('Forbidden: Only the assigned group operator or admin can delete sessions');
     err.status = 403;
     throw err;
   }
-  return sessionRepo.deleteSession(sessionId);
+  return await sessionRepo.deleteSession(sessionId);
 }
 
 export async function deleteGroup(userId, groupId) {
-  const user = userRepo.findUserById(userId);
+  const user = await userRepo.findUserById(userId);
   if (!user || user.role !== 'admin') {
     const err = new Error('Forbidden: Only admins can delete study groups');
     err.status = 403;
     throw err;
   }
-  const group = sessionRepo.getGroupById(groupId);
+  const group = await sessionRepo.getGroupById(groupId);
   if (!group) {
     const err = new Error('Group not found');
     err.status = 404;
     throw err;
   }
-  return sessionRepo.deleteGroup(groupId);
+  return await sessionRepo.deleteGroup(groupId);
 }
 
 export async function assignGroupOperators(userId, groupId, userIds) {
-  const user = userRepo.findUserById(userId);
+  const user = await userRepo.findUserById(userId);
   if (!user || user.role !== 'admin') {
     const err = new Error('Forbidden: Only admins can assign group operators');
     err.status = 403;
     throw err;
   }
-  const group = sessionRepo.getGroupById(groupId);
+  const group = await sessionRepo.getGroupById(groupId);
   if (!group) {
     const err = new Error('Group not found');
     err.status = 404;
     throw err;
   }
-  return sessionRepo.setOperatorsForGroup(groupId, userIds);
+  return await sessionRepo.setOperatorsForGroup(groupId, userIds);
 }
 
-export function getOperatorsForGroup(groupId) {
-  return sessionRepo.getOperatorsForGroup(groupId);
+export async function getOperatorsForGroup(groupId) {
+  return await sessionRepo.getOperatorsForGroup(groupId);
 }
 
-export function getAllUsers() {
-  return userRepo.getAllUsers();
+export async function getAllUsers() {
+  return await userRepo.getAllUsers();
 }
 
 export const COURSE_TOPICS = [
@@ -152,7 +157,7 @@ export const COURSE_TOPICS = [
 
 export async function summariseNotes(notes, { client, apiKey } = {}) {
   const key = apiKey || process.env.GEMINI_API_KEY;
-  
+
   const fallback = () => {
     const lines = (notes || '').split('\n').filter(Boolean);
     const line1 = lines[0] || 'Summary line 1';
@@ -183,9 +188,15 @@ export async function summariseNotes(notes, { client, apiKey } = {}) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        contents: [{
-          parts: [{ text: `Summarize the following study session notes into exactly two lines and select 3 tags from [${COURSE_TOPICS.join(', ')}]. Format as JSON with summary and tags:\n\n${notes}` }]
-        }]
+        contents: [
+          {
+            parts: [
+              {
+                text: `Summarise these study session notes into a two-line summary and provide three tags from this list: [${COURSE_TOPICS.join(', ')}]. Return JSON format with keys "summary" (string) and "tags" (array of 3 strings).\n\nNotes:\n${notes}`
+              }
+            ]
+          }
+        ]
       }),
       signal: controller.signal
     });
@@ -193,31 +204,40 @@ export async function summariseNotes(notes, { client, apiKey } = {}) {
     clearTimeout(timeoutId);
 
     if (!res.ok) {
-      throw new Error(`API error: ${res.status}`);
+      return fallback();
     }
 
     const data = await res.json();
     const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
     if (!text) {
-      throw new Error('Invalid model response');
+      return fallback();
     }
 
+    let parsed;
     try {
-      const parsed = JSON.parse(text);
-      if (parsed.summary && Array.isArray(parsed.tags)) {
-        const validTags = parsed.tags.filter(t => COURSE_TOPICS.includes(t));
-        while (validTags.length < 3) {
-          validTags.push(COURSE_TOPICS[validTags.length % COURSE_TOPICS.length]);
-        }
-        return {
-          summary: parsed.summary,
-          tags: validTags.slice(0, 3)
-        };
-      }
-    } catch (e) {}
+      const cleaned = text.replace(/```json/g, '').replace(/```/g, '').trim();
+      parsed = JSON.parse(cleaned);
+    } catch (e) {
+      return fallback();
+    }
 
-    return fallback();
-  } catch (err) {
+    if (!parsed || typeof parsed.summary !== 'string' || !Array.isArray(parsed.tags)) {
+      return fallback();
+    }
+
+    const validTags = parsed.tags.filter(t => COURSE_TOPICS.includes(t));
+    if (validTags.length < 3) {
+      return fallback();
+    }
+
+    const summaryLines = parsed.summary.split('\n').filter(Boolean);
+    const summary = summaryLines.slice(0, 2).join('\n') || fallback().summary;
+
+    return {
+      summary,
+      tags: validTags.slice(0, 3)
+    };
+  } catch (e) {
     return fallback();
   }
 }

@@ -10,3 +10,4 @@ One row per agent session. In Gemini CLI, type `/stats` before you quit and copy
 | 2026-11-06 | gemini-3-flash-preview | 25,476 | 215 | --- | 0.01€ |
 | 2026-11-06 | gemini-3.5-flash-lite | 9,152,443 | 71,258 | --- | 2.69€ |
 | 2026-11-08 | gemini-3.5-flash-lite | 4,048,304 | 11,344 | --- | 1.10€ |
+| 2026-11-10 | gemini-3.5-flash-lite | 15,850,434 | 44,914 | --- | 4.37€ |

@@ -88,7 +88,7 @@ router.delete('/groups/:id', requireAuth, async (req, res) => {
 
 router.get('/groups/:id/operators', requireAuth, async (req, res) => {
   try {
-    const operators = sessionService.getOperatorsForGroup(req.params.id);
+    const operators = await sessionService.getOperatorsForGroup(req.params.id);
     return res.json(operators);
   } catch (err) {
     return res.status(err.status || 500).json({ error: err.message });
@@ -107,10 +107,10 @@ router.post('/groups/:id/operators', requireAuth, async (req, res) => {
 
 router.get('/users', requireAuth, async (req, res) => {
   try {
-    const users = sessionService.getAllUsers();
+    const users = await sessionService.getAllUsers();
     return res.json(users);
   } catch (err) {
-    return res.status(err.status || 500).json({ error: err.message });
+    return res.status(500).json({ error: err.message });
   }
 });
 
