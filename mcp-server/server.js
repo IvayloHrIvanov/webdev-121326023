@@ -148,20 +148,20 @@ rl.on('line', async (line) => {
 
       try {
         if (toolName === 'my_groups') {
-          const groups = sessionService.getAllGroups(userId);
+          const groups = await sessionService.getAllGroups(userId);
           const userGroups = groups.filter(g => g.is_member);
           textResult = JSON.stringify(userGroups);
         }
         else if (toolName === 'upcoming_sessions') {
-          const sessions = sessionService.getUpcomingSessions(userId);
+          const sessions = await sessionService.getUpcomingSessions(userId);
           textResult = JSON.stringify(sessions);
         }
         else if (toolName === 'join_group') {
-          sessionService.joinGroup(userId, args.groupId);
+          await sessionService.joinGroup(userId, args.groupId);
           textResult = 'You have successfully joined the group';
         }
         else if (toolName === 'schedule_session') {
-          const sessionId = sessionService.scheduleSession(userId, {
+          const sessionId = await sessionService.scheduleSession(userId, {
             groupId: args.groupId,
             title: args.title,
             startTime: args.startTime,

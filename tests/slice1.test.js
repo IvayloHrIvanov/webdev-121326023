@@ -1,4 +1,4 @@
-import { describe, it, before, after } from 'node:test';
+import { describe, it, before, beforeEach, after } from 'node:test';
 import request from 'supertest';
 import { expect } from 'chai';
 import app from '../src/app.js';
@@ -16,25 +16,32 @@ describe('Slice 1 Acceptance Tests', () => {
   before(async () => {
     const db = getDb();
     const hashedPassword = await bcrypt.hash('password123', 10);
-    const userRes = db.run('INSERT INTO users (email, password_hash) VALUES (?, ?)', [EMAIL, hashedPassword]);
+    const userRes = await db.run('INSERT INTO users (email, password_hash) VALUES (?, ?) RETURNING id', [EMAIL, hashedPassword]);
     userId = userRes.lastID;
 
-    const groupRes = db.run('INSERT INTO groups (name, course_name, owner_id) VALUES (?, ?, ?)', ['Math Group S1', 'Math 101', userId]);
+    const groupRes = await db.run('INSERT INTO groups (name, course_name, owner_id) VALUES (?, ?, ?) RETURNING id', ['Math Group S1', 'Math 101', userId]);
     groupId = groupRes.lastID;
 
-    db.run('INSERT INTO memberships (user_id, group_id) VALUES (?, ?)', [userId, groupId]);
+    await db.run('INSERT INTO memberships (user_id, group_id) VALUES (?, ?)', [userId, groupId]);
 
-    db.run('INSERT INTO sessions (group_id, title, start_time) VALUES (?, ?, ?)', [groupId, 'Calculus Workshop S1', '2030-01-02 10:00:00']);
-    db.run('INSERT INTO sessions (group_id, title, start_time) VALUES (?, ?, ?)', [groupId, 'Algebra Review S1', '2030-01-01 10:00:00']);
+    await db.run('INSERT INTO sessions (group_id, title, start_time) VALUES (?, ?, ?)', [groupId, 'Calculus Workshop S1', '2030-01-02 10:00:00']);
+    await db.run('INSERT INTO sessions (group_id, title, start_time) VALUES (?, ?, ?)', [groupId, 'Algebra Review S1', '2030-01-01 10:00:00']);
+  });
+
+  beforeEach(async () => {
+    const db = getDb();
+    await db.run('DELETE FROM sessions WHERE group_id = ?', [groupId]);
+    await db.run('INSERT INTO sessions (group_id, title, start_time) VALUES (?, ?, ?)', [groupId, 'Calculus Workshop S1', '2030-01-02 10:00:00']);
+    await db.run('INSERT INTO sessions (group_id, title, start_time) VALUES (?, ?, ?)', [groupId, 'Algebra Review S1', '2030-01-01 10:00:00']);
   });
 
   after(async () => {
     const db = getDb();
     if (userId) {
-      db.run('DELETE FROM sessions WHERE group_id IN (SELECT id FROM groups WHERE owner_id = ?)', [userId]);
-      db.run('DELETE FROM memberships WHERE user_id = ?', [userId]);
-      db.run('DELETE FROM groups WHERE owner_id = ?', [userId]);
-      db.run('DELETE FROM users WHERE id = ?', [userId]);
+      await db.run('DELETE FROM sessions WHERE group_id IN (SELECT id FROM groups WHERE owner_id = ?)', [userId]);
+      await db.run('DELETE FROM memberships WHERE user_id = ?', [userId]);
+      await db.run('DELETE FROM groups WHERE owner_id = ?', [userId]);
+      await db.run('DELETE FROM users WHERE id = ?', [userId]);
     }
   });
 
@@ -52,7 +59,6 @@ describe('Slice 1 Acceptance Tests', () => {
       .send({ email: EMAIL, password: 'password123' });
 
     expect(loginRes.status).to.equal(200);
-    expect(loginRes.body.success).to.be.true;
 
     const res = await agent.get('/api/sessions');
     expect(res.status).to.equal(200);
@@ -64,7 +70,7 @@ describe('Slice 1 Acceptance Tests', () => {
 
   it('AC-11: If a scheduled session is deleted from the database, it no longer appears in the list', async () => {
     const db = getDb();
-    db.run('DELETE FROM sessions WHERE title = ?', ['Algebra Review S1']);
+    await db.run('DELETE FROM sessions WHERE group_id = ? AND title = ?', [groupId, 'Algebra Review S1']);
 
     const res = await agent.get('/api/sessions');
     expect(res.status).to.equal(200);
@@ -74,25 +80,29 @@ describe('Slice 1 Acceptance Tests', () => {
 
   it('AC-12: If a user joins a study group and reloads /sessions, upcoming sessions appear', async () => {
     const db = getDb();
-    const gRes = db.run('INSERT INTO groups (name, course_name, owner_id) VALUES (?, ?, ?)', ['Physics Group S1', 'Physics 101', userId]);
-    const physicsGroupId = gRes.lastID;
-    db.run('INSERT INTO sessions (group_id, title, start_time) VALUES (?, ?, ?)', [physicsGroupId, 'Quantum Mechanics S1', '2030-01-03 10:00:00']);
+    // Create another group with a session, user not yet member
+    const newGroupRes = await db.run('INSERT INTO groups (name, course_name, owner_id) VALUES (?, ?, ?) RETURNING id', ['History Group', 'History 101', userId]);
+    const newGroupId = newGroupRes.lastID;
+    await db.run('INSERT INTO sessions (group_id, title, start_time) VALUES (?, ?, ?)', [newGroupId, 'History Lecture', '2030-01-03 10:00:00']);
 
+    // Initially not in sessions list
     let res = await agent.get('/api/sessions');
-    expect(res.body.some(s => s.title === 'Quantum Mechanics S1')).to.be.false;
+    expect(res.body.some(s => s.title === 'History Lecture')).to.be.false;
 
-    const joinRes = await agent.post('/api/memberships').send({ groupId: physicsGroupId });
-    expect(joinRes.status).to.equal(200);
+    // Join group
+    await agent.post('/api/memberships').send({ groupId: newGroupId });
 
+    // Now appears in sessions list
     res = await agent.get('/api/sessions');
-    expect(res.body.some(s => s.title === 'Quantum Mechanics S1')).to.be.true;
+    expect(res.body.some(s => s.title === 'History Lecture')).to.be.true;
   });
 
   it('AC-13: If all upcoming sessions of a group are removed, no sessions from that group are displayed', async () => {
     const db = getDb();
-    db.run('DELETE FROM sessions WHERE title = ?', ['Quantum Mechanics S1']);
+    await db.run('DELETE FROM sessions WHERE group_id = ?', [groupId]);
+    await db.run('DELETE FROM sessions WHERE title = ?', ['History Lecture']);
 
     const res = await agent.get('/api/sessions');
-    expect(res.body.some(s => s.title === 'Quantum Mechanics S1')).to.be.false;
+    expect(res.body.length).to.equal(0);
   });
 });

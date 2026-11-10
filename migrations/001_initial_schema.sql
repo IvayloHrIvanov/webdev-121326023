@@ -1,18 +1,18 @@
--- Initial schema for Slice 1 (SQLite compatible)
+-- Initial schema for Slice 1 (PostgreSQL compatible)
 
 CREATE TABLE IF NOT EXISTS users (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id SERIAL PRIMARY KEY,
     email TEXT UNIQUE NOT NULL,
     password_hash TEXT NOT NULL,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS groups (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id SERIAL PRIMARY KEY,
     name TEXT NOT NULL,
     course_name TEXT NOT NULL,
     owner_id INTEGER REFERENCES users(id),
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS memberships (
@@ -22,14 +22,13 @@ CREATE TABLE IF NOT EXISTS memberships (
 );
 
 CREATE TABLE IF NOT EXISTS sessions (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id SERIAL PRIMARY KEY,
     group_id INTEGER REFERENCES groups(id) ON DELETE CASCADE,
     title TEXT NOT NULL,
-    start_time DATETIME NOT NULL,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    start_time TIMESTAMP NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Add this to your schema definition
 CREATE TABLE IF NOT EXISTS session_attendance (
     user_id INTEGER REFERENCES users(id),
     session_id INTEGER REFERENCES sessions(id) ON DELETE CASCADE,
@@ -37,26 +36,42 @@ CREATE TABLE IF NOT EXISTS session_attendance (
     PRIMARY KEY (user_id, session_id)
 );
 
--- Seed data
--- Passwords are 'password123' hashed with bcrypt (cost 10)
-INSERT OR IGNORE INTO users (id, email, password_hash) VALUES
-(1, 'student@example.com', '$2b$10$9fCCBd6Vn.Lv8zSQLDSZeu9csxN08sal0NQsVdb.KQ.axuWhR6YZe'),
-(2, 'organizer@example.com', '$2b$10$9fCCBd6Vn.Lv8zSQLDSZeu9csxN08sal0NQsVdb.KQ.axuWhR6YZe');
+-- Seed data using email lookups instead of hardcoded IDs
+INSERT INTO users (email, password_hash) VALUES
+('student@example.com', '$2b$10$9fCCBd6Vn.Lv8zSQLDSZeu9csxN08sal0NQsVdb.KQ.axuWhR6YZe'),
+('organizer@example.com', '$2b$10$9fCCBd6Vn.Lv8zSQLDSZeu9csxN08sal0NQsVdb.KQ.axuWhR6YZe')
+ON CONFLICT (email) DO NOTHING;
 
-INSERT OR IGNORE INTO groups (id, name, course_name, owner_id) VALUES
-(1, 'Math Study Group', 'Mathematics 101', 2),
-(2, 'CS Basics', 'Computer Science 50', 2);
+INSERT INTO groups (name, course_name, owner_id) 
+SELECT 'Math Study Group', 'Mathematics 101', id FROM users WHERE email = 'organizer@example.com'
+ON CONFLICT DO NOTHING;
 
-INSERT OR IGNORE INTO memberships (user_id, group_id) VALUES
-(1, 1), -- Student joins Math
-(1, 2), -- Student joins CS
-(2, 1), -- Organizer is in Math
-(2, 2); -- Organizer is in CS
+INSERT INTO groups (name, course_name, owner_id) 
+SELECT 'CS Basics', 'Computer Science 50', id FROM users WHERE email = 'organizer@example.com'
+ON CONFLICT DO NOTHING;
 
--- Some sessions in the future, some in the past
--- SQLite date functions: datetime('now', '+2 days')
-INSERT OR IGNORE INTO sessions (id, group_id, title, start_time) VALUES
-(1, 1, 'Algebra Review', datetime('now', '+2 days')),
-(2, 1, 'Calculus Workshop', datetime('now', '+5 days')),
-(3, 2, 'Binary Trees', datetime('now', '+1 day')),
-(4, 2, 'Intro to C', datetime('now', '-1 day')); -- Past session
+INSERT INTO memberships (user_id, group_id) 
+SELECT u.id, g.id FROM users u, groups g 
+WHERE u.email = 'student@example.com' AND g.name IN ('Math Study Group', 'CS Basics')
+ON CONFLICT (user_id, group_id) DO NOTHING;
+
+INSERT INTO memberships (user_id, group_id) 
+SELECT u.id, g.id FROM users u, groups g 
+WHERE u.email = 'organizer@example.com' AND g.name IN ('Math Study Group', 'CS Basics')
+ON CONFLICT (user_id, group_id) DO NOTHING;
+
+INSERT INTO sessions (group_id, title, start_time) 
+SELECT g.id, 'Algebra Review', NOW() + INTERVAL '2 days' FROM groups g WHERE g.name = 'Math Study Group'
+AND NOT EXISTS (SELECT 1 FROM sessions WHERE group_id = g.id AND title = 'Algebra Review');
+
+INSERT INTO sessions (group_id, title, start_time) 
+SELECT g.id, 'Calculus Workshop', NOW() + INTERVAL '5 days' FROM groups g WHERE g.name = 'Math Study Group'
+AND NOT EXISTS (SELECT 1 FROM sessions WHERE group_id = g.id AND title = 'Calculus Workshop');
+
+INSERT INTO sessions (group_id, title, start_time) 
+SELECT g.id, 'Binary Trees', NOW() + INTERVAL '1 day' FROM groups g WHERE g.name = 'CS Basics'
+AND NOT EXISTS (SELECT 1 FROM sessions WHERE group_id = g.id AND title = 'Binary Trees');
+
+INSERT INTO sessions (group_id, title, start_time) 
+SELECT g.id, 'Intro to C', NOW() - INTERVAL '1 day' FROM groups g WHERE g.name = 'CS Basics'
+AND NOT EXISTS (SELECT 1 FROM sessions WHERE group_id = g.id AND title = 'Intro to C');
