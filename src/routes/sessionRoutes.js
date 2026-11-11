@@ -114,6 +114,34 @@ router.get('/users', requireAuth, async (req, res) => {
   }
 });
 
+router.post('/users', requireAuth, async (req, res) => {
+  try {
+    const newUser = await sessionService.adminCreateUser(req.session.userId, req.body);
+    return res.json({ success: true, user: newUser });
+  } catch (err) {
+    return res.status(err.status || 500).json({ error: err.message });
+  }
+});
+
+router.put('/users/:id', requireAuth, async (req, res) => {
+  try {
+    const updatedUser = await sessionService.adminUpdateUser(req.session.userId, req.params.id, req.body);
+    return res.json({ success: true, user: updatedUser });
+  } catch (err) {
+    return res.status(err.status || 500).json({ error: err.message });
+  }
+});
+
+router.delete('/users/:id', requireAuth, async (req, res) => {
+  try {
+    const { password } = req.body;
+    await sessionService.adminDeleteUser(req.session.userId, req.params.id, password);
+    return res.json({ success: true });
+  } catch (err) {
+    return res.status(err.status || 500).json({ error: err.message });
+  }
+});
+
 // New endpoint for updating individual session attendance
 router.post('/sessions/:id/attendance', requireAuth, async (req, res) => {
   try {
