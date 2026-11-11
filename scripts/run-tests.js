@@ -1,4 +1,5 @@
 import { spawn } from 'child_process';
+import { randomBytes } from 'node:crypto';
 import pg from 'pg';
 
 const { Pool } = pg;
@@ -22,91 +23,44 @@ const pool = new Pool({
   ssl: connectionString.includes('neon.tech') || connectionString.includes('sslmode=') ? { rejectUnauthorized: false } : false
 });
 
-async function takeSnapshot() {
-  const users = (await pool.query('SELECT * FROM users')).rows;
-  const groups = (await pool.query('SELECT * FROM groups')).rows;
-  const memberships = (await pool.query('SELECT * FROM memberships')).rows;
-  const groupOperators = (await pool.query('SELECT * FROM group_operators')).rows;
-  const sessions = (await pool.query('SELECT * FROM sessions')).rows;
-  const sessionAttendance = (await pool.query('SELECT * FROM session_attendance')).rows;
+async function createTestSchema() {
+  const schemaName = `test_${randomBytes(12).toString('hex')}`;
+  await pool.query(`CREATE SCHEMA "${schemaName}"`);
 
-  return {
-    users,
-    groups,
-    memberships,
-    groupOperators,
-    sessions,
-    sessionAttendance
-  };
+  const testUrl = new URL(connectionString);
+  testUrl.hostname = testUrl.hostname.replace(/-pooler(?=\.|$)/, '');
+  testUrl.searchParams.set('options', `-c search_path=${schemaName}`);
+  const testPool = new Pool({
+    connectionString: testUrl.toString(),
+    ssl: connectionString.includes('neon.tech') || connectionString.includes('sslmode=') ? { rejectUnauthorized: false } : false
+  });
+
+  try {
+    const result = await testPool.query('SELECT current_schema() AS schema');
+    if (result.rows[0].schema !== schemaName) {
+      throw new Error('PostgreSQL did not select the temporary test schema');
+    }
+  } catch (err) {
+    await pool.query(`DROP SCHEMA IF EXISTS "${schemaName}" CASCADE`);
+    throw err;
+  } finally {
+    await testPool.end();
+  }
+
+  return { schemaName, databaseUrl: testUrl.toString() };
 }
 
-async function restoreSnapshot(snapshot) {
-  const client = await pool.connect();
-  try {
-    await client.query('BEGIN');
-
-    await client.query('TRUNCATE TABLE session_attendance, sessions, group_operators, memberships, groups, users RESTART IDENTITY CASCADE');
-
-    for (const u of snapshot.users) {
-      await client.query(
-        'INSERT INTO users (id, email, password_hash, created_at, role, google_id) VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (id) DO UPDATE SET email = EXCLUDED.email, password_hash = EXCLUDED.password_hash, created_at = EXCLUDED.created_at, role = EXCLUDED.role, google_id = EXCLUDED.google_id',
-        [u.id, u.email, u.password_hash, u.created_at, u.role, u.google_id]
-      );
-    }
-
-    for (const g of snapshot.groups) {
-      await client.query(
-        'INSERT INTO groups (id, name, course_name, owner_id, created_at) VALUES ($1, $2, $3, $4, $5) ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, course_name = EXCLUDED.course_name, owner_id = EXCLUDED.owner_id, created_at = EXCLUDED.created_at',
-        [g.id, g.name, g.course_name, g.owner_id, g.created_at]
-      );
-    }
-
-    for (const m of snapshot.memberships) {
-      await client.query(
-        'INSERT INTO memberships (user_id, group_id) VALUES ($1, $2) ON CONFLICT (user_id, group_id) DO NOTHING',
-        [m.user_id, m.group_id]
-      );
-    }
-
-    for (const go of snapshot.groupOperators) {
-      await client.query(
-        'INSERT INTO group_operators (group_id, user_id) VALUES ($1, $2) ON CONFLICT (group_id, user_id) DO NOTHING',
-        [go.group_id, go.user_id]
-      );
-    }
-
-    for (const s of snapshot.sessions) {
-      await client.query(
-        'INSERT INTO sessions (id, group_id, title, start_time, created_at, end_time) VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (id) DO UPDATE SET group_id = EXCLUDED.group_id, title = EXCLUDED.title, start_time = EXCLUDED.start_time, created_at = EXCLUDED.created_at, end_time = EXCLUDED.end_time',
-        [s.id, s.group_id, s.title, s.start_time, s.created_at, s.end_time]
-      );
-    }
-
-    for (const sa of snapshot.sessionAttendance) {
-      await client.query(
-        'INSERT INTO session_attendance (user_id, session_id, status) VALUES ($1, $2, $3) ON CONFLICT (user_id, session_id) DO UPDATE SET status = EXCLUDED.status',
-        [sa.user_id, sa.session_id, sa.status]
-      );
-    }
-
-    await client.query("SELECT setval(pg_get_serial_sequence('users', 'id'), COALESCE((SELECT MAX(id) FROM users), 1), true)");
-    await client.query("SELECT setval(pg_get_serial_sequence('groups', 'id'), COALESCE((SELECT MAX(id) FROM groups), 1), true)");
-    await client.query("SELECT setval(pg_get_serial_sequence('sessions', 'id'), COALESCE((SELECT MAX(id) FROM sessions), 1), true)");
-
-    await client.query('COMMIT');
-  } catch (err) {
-    await client.query('ROLLBACK');
-    console.error('Failed to restore DB snapshot:', err);
-  } finally {
-    client.release();
+async function dropTestSchema(schemaName) {
+  if (schemaName) {
+    await pool.query(`DROP SCHEMA IF EXISTS "${schemaName}" CASCADE`);
   }
 }
 
-function runSpawn(args) {
+function runSpawn(args, databaseUrl) {
   return new Promise((resolve) => {
     const p = spawn('node', args, {
       stdio: 'inherit',
-      env: { ...process.env, NODE_ENV: 'test' }
+      env: { ...process.env, DATABASE_URL: databaseUrl, NODE_ENV: 'test' }
     });
     p.on('close', (code) => {
       resolve(code);
@@ -115,23 +69,27 @@ function runSpawn(args) {
 }
 
 async function main() {
-  let snapshot = null;
+  let activeSchema = null;
+  let exitCode = 0;
   try {
-    const dummyClient = await pool.connect();
-    dummyClient.release();
-
-    snapshot = await takeSnapshot();
+    await pool.query('SELECT 1');
   } catch (err) {
-    console.error('Failed to take initial DB snapshot:', err);
+    console.error('Failed to connect to the test database:', err.message);
+    await pool.end();
     process.exit(1);
   }
 
   const args = process.argv.slice(2);
-  let exitCode = 0;
+  const runIsolated = async (testArgs) => {
+    await dropTestSchema(activeSchema);
+    const testSchema = await createTestSchema();
+    activeSchema = testSchema.schemaName;
+    return await runSpawn(testArgs, testSchema.databaseUrl);
+  };
 
   try {
     if (args.includes('--coverage')) {
-      const code1 = await runSpawn([
+      const code1 = await runIsolated([
         '--env-file-if-exists=.env',
         '--test',
         '--experimental-test-coverage',
@@ -145,8 +103,7 @@ async function main() {
       if (code1 !== 0) {
         exitCode = code1;
       } else {
-        await restoreSnapshot(snapshot);
-        const code2 = await runSpawn([
+        const code2 = await runIsolated([
           '--env-file-if-exists=.env',
           '--test',
           '--experimental-test-coverage',
@@ -161,7 +118,7 @@ async function main() {
       }
     } else {
       const testArgs = args.length > 0 ? args : ['tests/**/*.test.js'];
-      exitCode = await runSpawn([
+      exitCode = await runIsolated([
         '--env-file-if-exists=.env',
         '--test',
         ...testArgs
@@ -172,9 +129,10 @@ async function main() {
     exitCode = 1;
   } finally {
     try {
-      await restoreSnapshot(snapshot);
+      await dropTestSchema(activeSchema);
     } catch (err) {
-      console.error('Error during snapshot restoration after tests:', err);
+      console.error('Failed to remove the temporary test schema:', err.message);
+      exitCode = 1;
     } finally {
       await pool.end();
       process.exit(exitCode);

@@ -2,6 +2,7 @@ import { describe, it } from 'node:test';
 import request from 'supertest';
 import { expect } from 'chai';
 import app from '../src/app.js';
+import { getDb } from '../src/data/db.js';
 
 describe('HTTP API routes', () => {
   it('GET /api/auth/me returns 401 when unauthenticated', async () => {
@@ -67,6 +68,81 @@ describe('HTTP API routes', () => {
       expect(res.headers.location).to.equal('/login?error=google_not_configured');
     } finally {
       for (const [name, value] of Object.entries(previousEnv)) {
+        if (value === undefined) {
+          delete process.env[name];
+        } else {
+          process.env[name] = value;
+        }
+      }
+    }
+  });
+
+  it('GET /api/auth/google/callback signs in a verified Google user', async () => {
+    const previousEnv = {
+      GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID,
+      GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET,
+      PUBLIC_BASE_URL: process.env.PUBLIC_BASE_URL
+    };
+    const originalFetch = globalThis.fetch;
+    const googleId = `route_test_${Date.now()}`;
+    const email = `${googleId}@example.com`;
+    process.env.GOOGLE_CLIENT_ID = 'test-client-id';
+    process.env.GOOGLE_CLIENT_SECRET = 'test-client-secret';
+    process.env.PUBLIC_BASE_URL = 'https://study-groups.example';
+    globalThis.fetch = async (url) => url.endsWith('/token')
+      ? { ok: true, json: async () => ({ access_token: 'test-access-token' }) }
+      : { ok: true, json: async () => ({ sub: googleId, email, email_verified: true }) };
+
+    try {
+      const agent = request.agent(app);
+      const start = await agent.get('/api/auth/google').expect(302);
+      const state = new URL(start.headers.location).searchParams.get('state');
+      const callback = await agent
+        .get(`/api/auth/google/callback?state=${encodeURIComponent(state)}&code=test-code`)
+        .expect(302);
+      expect(callback.headers.location).to.equal('/sessions');
+
+      const profile = await agent.get('/api/auth/me').expect(200);
+      expect(profile.body.email).to.equal(email);
+    } finally {
+      globalThis.fetch = originalFetch;
+      await getDb().run('DELETE FROM users WHERE google_id = ?', [googleId]);
+      for (const [name, value] of Object.entries(previousEnv)) {
+        if (value === undefined) {
+          delete process.env[name];
+        } else {
+          process.env[name] = value;
+        }
+      }
+    }
+  });
+
+  it('GET /api/auth/google/callback handles cancellation and invalid base URL', async () => {
+    const previousBaseUrl = process.env.PUBLIC_BASE_URL;
+    const previousClientId = process.env.GOOGLE_CLIENT_ID;
+    const previousClientSecret = process.env.GOOGLE_CLIENT_SECRET;
+    process.env.GOOGLE_CLIENT_ID = 'test-client-id';
+    process.env.GOOGLE_CLIENT_SECRET = 'test-client-secret';
+    process.env.PUBLIC_BASE_URL = 'https://study-groups.example';
+
+    try {
+      const agent = request.agent(app);
+      const start = await agent.get('/api/auth/google').expect(302);
+      const state = new URL(start.headers.location).searchParams.get('state');
+      const cancelled = await agent
+        .get(`/api/auth/google/callback?state=${encodeURIComponent(state)}&error=access_denied`)
+        .expect(302);
+      expect(cancelled.headers.location).to.equal('/login?error=google_sign_in_cancelled');
+
+      process.env.PUBLIC_BASE_URL = 'not-a-valid-url';
+      const invalidBase = await request(app).get('/api/auth/google').expect(302);
+      expect(invalidBase.headers.location).to.equal('/login?error=google_not_configured');
+    } finally {
+      for (const [name, value] of Object.entries({
+        PUBLIC_BASE_URL: previousBaseUrl,
+        GOOGLE_CLIENT_ID: previousClientId,
+        GOOGLE_CLIENT_SECRET: previousClientSecret
+      })) {
         if (value === undefined) {
           delete process.env[name];
         } else {
