@@ -110,6 +110,8 @@ Screens:
 - [AC-22] A group owner/operator sees the "Schedule Session" button only for the specific study groups they own, allowing them to create sessions, while non-owners do not have access to schedule sessions for that group.
 - [AC-23] Any signed-in user (regardless of role) can view available groups, click to join or leave a group, and toggle their attendance status ("Attend" / "Will Not Attend") for any session belonging to their joined groups.
 - [AC-24] If a user attempts to perform a role-restricted action via a direct API request (such as a regular member attempting to create a study group or a session), the server responds with a `403 Forbidden` error.
+- [AC-25] Any user can delete there account after logging in and verifying by password
+- [AC-26] Admin accounts have account management and can add, delete and edit accounts and there name/email, level/role and password
 
 ## Traceability
 <!-- Filled in from Exercise 3 onward: each AC id, and the test that names it. -->
@@ -138,7 +140,9 @@ Screens:
 | AC-22 | A group owner/operator sees the "Schedule Session" button only for groups they own |
 | AC-23 | Any signed-in user can view groups, join/leave, and toggle attendance |
 | AC-24 | Role-restricted actions via direct API requests respond with 403 Forbidden |
-| AC-25 | UI/UX is updated with buttons and menus  |
+| AC-25 | A signed-in user who clicks "Delete Account" and provides their correct account password permanently deletes their account and is redirected to sign-in |
+| AC-26 | An admin user who opens the Account Management tab can create, edit, or delete any user account (requiring admin password authentication when deleting) and see updated listings |
+
 
 ## Spec vs result
 <!-- After the agent builds the slice: which criteria passed, which it missed or reinterpreted, and what you changed in this spec because of it. -->

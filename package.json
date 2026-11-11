@@ -9,8 +9,10 @@
   },
   "scripts": {
     "start": "node --env-file-if-exists=.env src/server.js",
+    "pretest": "node -e \"if (!require('fs').existsSync('.env')) require('fs').copyFileSync('.env.example', '.env')\"",
     "test": "node --env-file-if-exists=.env scripts/run-tests.js",
-    "coverage": "npx c8 node --env-file-if-exists=.env scripts/run-tests.js",
+    "precoverage": "node -e \"if (!require('fs').existsSync('.env')) require('fs').copyFileSync('.env.example', '.env')\"",
+    "coverage": "node --env-file-if-exists=.env scripts/run-tests.js --coverage",
     "mcp": "node mcp-server/server.js",
     "seed": "node --env-file-if-exists=.env scripts/seed-db.js"
   },
