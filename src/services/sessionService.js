@@ -1,6 +1,7 @@
 import * as sessionRepo from '../data/sessionRepo.js';
 import * as userRepo from '../data/userRepo.js';
 import { checkDbHealth } from '../data/db.js';
+import bcrypt from 'bcrypt';
 
 export async function checkHealth() {
   return await checkDbHealth();
@@ -148,6 +149,97 @@ export async function getOperatorsForGroup(groupId) {
 
 export async function getAllUsers() {
   return await userRepo.getAllUsers();
+}
+
+export async function adminCreateUser(adminId, { email, password, role }) {
+  const admin = await userRepo.findUserById(adminId);
+  if (!admin || admin.role !== 'admin') {
+    const err = new Error('Forbidden: Only admins can create users');
+    err.status = 403;
+    throw err;
+  }
+  if (!email || !password) {
+    const err = new Error('Email and password are required');
+    err.status = 400;
+    throw err;
+  }
+  const lowerEmail = email.toLowerCase();
+  const existing = await userRepo.findUserByEmail(lowerEmail);
+  if (existing) {
+    const err = new Error('User with this email already exists');
+    err.status = 400;
+    throw err;
+  }
+  try {
+    const validRole = ['student', 'operator', 'admin'].includes(role) ? role : 'student';
+    const hashedPassword = await bcrypt.hash(password, 10);
+    const userId = await userRepo.createUser(lowerEmail, hashedPassword, validRole);
+    return { id: userId, email: lowerEmail, role: validRole };
+  } catch (e) {
+    const err = new Error('User with this email already exists or invalid email');
+    err.status = 400;
+    throw err;
+  }
+}
+
+export async function adminUpdateUser(adminId, targetUserId, { email, password, role }) {
+  const admin = await userRepo.findUserById(adminId);
+  if (!admin || admin.role !== 'admin') {
+    const err = new Error('Forbidden: Only admins can update users');
+    err.status = 403;
+    throw err;
+  }
+  const targetUser = await userRepo.findUserById(targetUserId);
+  if (!targetUser) {
+    const err = new Error('User not found');
+    err.status = 404;
+    throw err;
+  }
+  const lowerEmail = email ? email.toLowerCase() : targetUser.email;
+  if (email && lowerEmail !== targetUser.email) {
+    const existing = await userRepo.findUserByEmail(lowerEmail);
+    if (existing) {
+      const err = new Error('User with this email already exists');
+      err.status = 400;
+      throw err;
+    }
+  }
+  try {
+    const updatedRole = ['student', 'operator', 'admin'].includes(role) ? role : targetUser.role;
+    let passwordHash = null;
+    if (password) {
+      passwordHash = await bcrypt.hash(password, 10);
+    }
+    await userRepo.updateUser(targetUserId, { email: lowerEmail, role: updatedRole, passwordHash });
+    return { id: Number(targetUserId), email: lowerEmail, role: updatedRole };
+  } catch (e) {
+    const err = new Error('User with this email already exists or invalid email');
+    err.status = 400;
+    throw err;
+  }
+}
+
+export async function adminDeleteUser(adminId, targetUserId, password) {
+  const admin = await userRepo.findUserByIdWithPassword(adminId);
+  if (!admin || admin.role !== 'admin') {
+    const err = new Error('Forbidden: Only admins can delete users');
+    err.status = 403;
+    throw err;
+  }
+  const match = await bcrypt.compare(password, admin.password_hash);
+  if (!match) {
+    const err = new Error('Invalid admin password');
+    err.status = 401;
+    throw err;
+  }
+  const targetUser = await userRepo.findUserById(targetUserId);
+  if (!targetUser) {
+    const err = new Error('User not found');
+    err.status = 404;
+    throw err;
+  }
+  await userRepo.deleteUser(targetUserId);
+  return { success: true };
 }
 
 export const COURSE_TOPICS = [
