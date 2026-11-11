@@ -11,6 +11,17 @@ const EMAIL_AUTH = `auth_test_${RUN_ID}@example.com`;
 const EMAIL_ADMIN = `admin_test_${RUN_ID}@example.com`;
 const EMAIL_STUDENT = `student_test_${RUN_ID}@example.com`;
 const EMAIL_NEW = `new_user_${RUN_ID}@example.com`;
+const EMAIL_GOOGLE = `google_user_${RUN_ID}@example.com`;
+const GOOGLE_ID = `google_${RUN_ID}`;
+
+async function expectStatusError(operation, status) {
+  try {
+    await operation();
+    expect.fail('expected operation to throw');
+  } catch (err) {
+    expect(err.status).to.equal(status);
+  }
+}
 
 describe('Service layer tests', () => {
   let userId;
@@ -18,6 +29,7 @@ describe('Service layer tests', () => {
   let studentId;
   let groupId;
   let sessionId;
+  let googleUserId;
 
   before(async () => {
     const db = getDb();
@@ -49,7 +61,7 @@ describe('Service layer tests', () => {
       await db.run('DELETE FROM memberships WHERE group_id = ?', [groupId]);
       await db.run('DELETE FROM groups WHERE id = ?', [groupId]);
     }
-    const ids = [userId, adminId, studentId].filter(Boolean);
+    const ids = [userId, adminId, studentId, googleUserId].filter(Boolean);
     for (const id of ids) {
       await db.run('DELETE FROM session_attendance WHERE user_id = ? OR session_id IN (SELECT id FROM sessions WHERE group_id IN (SELECT id FROM groups WHERE owner_id = ?))', [id, id]);
       await db.run('DELETE FROM group_operators WHERE user_id = ? OR group_id IN (SELECT id FROM groups WHERE owner_id = ?)', [id, id]);
@@ -72,6 +84,157 @@ describe('Service layer tests', () => {
 
     const resSuccess = await authService.authenticateUser(EMAIL_AUTH, 'password123');
     expect(resSuccess).to.have.property('id', userId);
+  });
+
+  it('authService: Google sign-in requires verified e-mail and matches accounts by Google id', async () => {
+    try {
+      await authService.authenticateGoogleIdentity({ sub: GOOGLE_ID, email: EMAIL_AUTH, email_verified: false });
+      expect.fail('unverified e-mail should be rejected');
+    } catch (err) {
+      expect(err.status).to.equal(401);
+    }
+
+    try {
+      await authService.authenticateGoogleIdentity({ sub: GOOGLE_ID, email: EMAIL_AUTH, email_verified: true });
+      expect.fail('existing local account should not be linked by e-mail');
+    } catch (err) {
+      expect(err.status).to.equal(409);
+    }
+
+    const originalClientId = process.env.GOOGLE_CLIENT_ID;
+    const originalClientSecret = process.env.GOOGLE_CLIENT_SECRET;
+    process.env.GOOGLE_CLIENT_ID = 'test-client-id';
+    process.env.GOOGLE_CLIENT_SECRET = 'test-client-secret';
+    const fetchCalls = [];
+    try {
+      const user = await authService.authenticateGoogleCode({
+        code: 'test-code',
+        codeVerifier: 'test-verifier',
+        redirectUri: 'https://study-groups.example/api/auth/google/callback'
+      }, async (url, options) => {
+        fetchCalls.push({ url, options });
+        if (url.endsWith('/token')) {
+          return { ok: true, json: async () => ({ access_token: 'test-access-token' }) };
+        }
+        return {
+          ok: true,
+          json: async () => ({ sub: GOOGLE_ID, email: EMAIL_GOOGLE, email_verified: true })
+        };
+      });
+      googleUserId = user.id;
+      expect(user.email).to.equal(EMAIL_GOOGLE);
+      expect(user.role).to.equal('student');
+      expect(fetchCalls).to.have.length(2);
+      expect(fetchCalls[0].options.body.get('code_verifier')).to.equal('test-verifier');
+
+      const returningUser = await authService.authenticateGoogleIdentity({
+        sub: GOOGLE_ID,
+        email: 'different-address@example.com',
+        email_verified: true
+      });
+      expect(returningUser.id).to.equal(googleUserId);
+    } finally {
+      if (originalClientId === undefined) {
+        delete process.env.GOOGLE_CLIENT_ID;
+      } else {
+        process.env.GOOGLE_CLIENT_ID = originalClientId;
+      }
+      if (originalClientSecret === undefined) {
+        delete process.env.GOOGLE_CLIENT_SECRET;
+      } else {
+        process.env.GOOGLE_CLIENT_SECRET = originalClientSecret;
+      }
+    }
+  });
+
+  it('authService: Google OAuth handles configuration, provider, and identity conflicts', async () => {
+    const originalClientId = process.env.GOOGLE_CLIENT_ID;
+    const originalClientSecret = process.env.GOOGLE_CLIENT_SECRET;
+    const codeRequest = {
+      code: 'test-code',
+      codeVerifier: 'test-verifier',
+      redirectUri: 'https://study-groups.example/api/auth/google/callback'
+    };
+
+    try {
+      delete process.env.GOOGLE_CLIENT_ID;
+      await expectStatusError(() => authService.createGoogleAuthorizationUrl({}), 503);
+
+      process.env.GOOGLE_CLIENT_ID = 'test-client-id';
+      delete process.env.GOOGLE_CLIENT_SECRET;
+      await expectStatusError(() => authService.authenticateGoogleCode(codeRequest, async () => ({})), 503);
+
+      process.env.GOOGLE_CLIENT_SECRET = 'test-client-secret';
+      await expectStatusError(() => authService.authenticateGoogleCode(codeRequest, async () => ({ ok: false })), 401);
+      await expectStatusError(() => authService.authenticateGoogleCode(codeRequest, async () => ({
+        ok: true,
+        json: async () => ({})
+      })), 401);
+      await expectStatusError(() => authService.authenticateGoogleCode(codeRequest, async (url) => url.endsWith('/token')
+        ? { ok: true, json: async () => ({ access_token: 'token' }) }
+        : { ok: false }), 401);
+
+      const linkedUser = { id: 7001, email: EMAIL_GOOGLE, role: 'student' };
+      let googleIdLookups = 0;
+      const racingRepository = {
+        findUserByGoogleId: async () => ++googleIdLookups === 1 ? null : linkedUser,
+        findUserByEmail: async () => null,
+        createGoogleUser: async () => {
+          const err = new Error('duplicate key');
+          err.code = '23505';
+          throw err;
+        }
+      };
+      const raceResult = await authService.authenticateGoogleIdentity({
+        sub: GOOGLE_ID,
+        email: EMAIL_GOOGLE,
+        email_verified: true
+      }, racingRepository);
+      expect(raceResult.id).to.equal(linkedUser.id);
+
+      const duplicateRepository = {
+        findUserByGoogleId: async () => null,
+        findUserByEmail: async () => null,
+        createGoogleUser: async () => {
+          const err = new Error('duplicate key');
+          err.code = '23505';
+          throw err;
+        }
+      };
+      await expectStatusError(() => authService.authenticateGoogleIdentity({
+        sub: GOOGLE_ID,
+        email: EMAIL_GOOGLE,
+        email_verified: true
+      }, duplicateRepository), 409);
+
+      const databaseError = new Error('database unavailable');
+      const failingRepository = {
+        findUserByGoogleId: async () => null,
+        findUserByEmail: async () => null,
+        createGoogleUser: async () => { throw databaseError; }
+      };
+      try {
+        await authService.authenticateGoogleIdentity({
+          sub: GOOGLE_ID,
+          email: EMAIL_GOOGLE,
+          email_verified: true
+        }, failingRepository);
+        expect.fail('database error should propagate');
+      } catch (err) {
+        expect(err).to.equal(databaseError);
+      }
+    } finally {
+      if (originalClientId === undefined) {
+        delete process.env.GOOGLE_CLIENT_ID;
+      } else {
+        process.env.GOOGLE_CLIENT_ID = originalClientId;
+      }
+      if (originalClientSecret === undefined) {
+        delete process.env.GOOGLE_CLIENT_SECRET;
+      } else {
+        process.env.GOOGLE_CLIENT_SECRET = originalClientSecret;
+      }
+    }
   });
 
   it('authService: deleteAccount handles user not found, wrong password, and success', async () => {
