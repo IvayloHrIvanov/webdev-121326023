@@ -16,9 +16,17 @@ export function getDb() {
     if (!connectionString) {
       throw new Error('DATABASE_URL environment variable is missing');
     }
+    let cleanConnectionString = connectionString;
+    try {
+      const url = new URL(connectionString);
+      url.searchParams.delete('sslmode');
+      cleanConnectionString = url.toString();
+    } catch (e) {
+      cleanConnectionString = connectionString.replace(/[?&]sslmode=[^&]*(?:&|$)/g, '');
+    }
     poolInstance = new Pool({
-      connectionString,
-      ssl: connectionString.includes('neon.tech') || connectionString.includes('sslmode=require') ? { rejectUnauthorized: false } : false
+      connectionString: cleanConnectionString,
+      ssl: connectionString.includes('neon.tech') || connectionString.includes('sslmode=') ? { rejectUnauthorized: false } : false
     });
   }
 
