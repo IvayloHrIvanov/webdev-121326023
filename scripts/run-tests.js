@@ -49,8 +49,8 @@ async function restoreSnapshot(snapshot) {
 
     for (const u of snapshot.users) {
       await client.query(
-        'INSERT INTO users (id, email, password_hash, created_at, role) VALUES ($1, $2, $3, $4, $5) ON CONFLICT (id) DO UPDATE SET email = EXCLUDED.email, password_hash = EXCLUDED.password_hash, created_at = EXCLUDED.created_at, role = EXCLUDED.role',
-        [u.id, u.email, u.password_hash, u.created_at, u.role]
+        'INSERT INTO users (id, email, password_hash, created_at, role, google_id) VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (id) DO UPDATE SET email = EXCLUDED.email, password_hash = EXCLUDED.password_hash, created_at = EXCLUDED.created_at, role = EXCLUDED.role, google_id = EXCLUDED.google_id',
+        [u.id, u.email, u.password_hash, u.created_at, u.role, u.google_id]
       );
     }
 

@@ -18,6 +18,64 @@ describe('HTTP API routes', () => {
     expect(res.body.error).to.equal('Invalid email or password');
   });
 
+  it('GET /api/auth/google starts a state- and PKCE-protected Google sign-in', async () => {
+    const previousEnv = {
+      GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID,
+      GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET,
+      PUBLIC_BASE_URL: process.env.PUBLIC_BASE_URL
+    };
+    process.env.GOOGLE_CLIENT_ID = 'test-client-id';
+    process.env.GOOGLE_CLIENT_SECRET = 'test-client-secret';
+    process.env.PUBLIC_BASE_URL = 'https://study-groups.example';
+
+    try {
+      const agent = request.agent(app);
+      const res = await agent.get('/api/auth/google').expect(302);
+      const authorizationUrl = new URL(res.headers.location);
+      expect(authorizationUrl.origin).to.equal('https://accounts.google.com');
+      expect(authorizationUrl.searchParams.get('redirect_uri'))
+        .to.equal('https://study-groups.example/api/auth/google/callback');
+      expect(authorizationUrl.searchParams.get('code_challenge_method')).to.equal('S256');
+      expect(authorizationUrl.searchParams.get('code_challenge')).to.match(/^[A-Za-z0-9_-]{43}$/);
+      expect(authorizationUrl.searchParams.get('state')).to.match(/^[A-Za-z0-9_-]{43}$/);
+
+      const callback = await agent.get('/api/auth/google/callback?state=incorrect&code=test-code').expect(302);
+      expect(callback.headers.location).to.equal('/login?error=google_state_mismatch');
+    } finally {
+      for (const [name, value] of Object.entries(previousEnv)) {
+        if (value === undefined) {
+          delete process.env[name];
+        } else {
+          process.env[name] = value;
+        }
+      }
+    }
+  });
+
+  it('GET /api/auth/google reports missing provider configuration', async () => {
+    const previousEnv = {
+      GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID,
+      GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET,
+      PUBLIC_BASE_URL: process.env.PUBLIC_BASE_URL
+    };
+    delete process.env.GOOGLE_CLIENT_ID;
+    delete process.env.GOOGLE_CLIENT_SECRET;
+    delete process.env.PUBLIC_BASE_URL;
+
+    try {
+      const res = await request(app).get('/api/auth/google').expect(302);
+      expect(res.headers.location).to.equal('/login?error=google_not_configured');
+    } finally {
+      for (const [name, value] of Object.entries(previousEnv)) {
+        if (value === undefined) {
+          delete process.env[name];
+        } else {
+          process.env[name] = value;
+        }
+      }
+    }
+  });
+
   it('DELETE /api/auth/account returns 401 when unauthenticated', async () => {
     const res = await request(app).delete('/api/auth/account');
     expect(res.status).to.equal(401);

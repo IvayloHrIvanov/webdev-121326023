@@ -6,6 +6,11 @@ export async function findUserByEmail(email) {
   return await db.get('SELECT * FROM users WHERE email = ?', [lowerEmail]);
 }
 
+export async function findUserByGoogleId(googleId) {
+  const db = getDb();
+  return await db.get('SELECT id, email, role FROM users WHERE google_id = ?', [googleId]);
+}
+
 export async function findUserById(id) {
   const db = getDb();
   return await db.get('SELECT id, email, role, created_at FROM users WHERE id = ?', [id]);
@@ -29,6 +34,14 @@ export async function createUser(email, passwordHash, role = 'student') {
     [lowerEmail, passwordHash, role]
   );
   return res.lastID;
+}
+
+export async function createGoogleUser(email, passwordHash, googleId) {
+  const db = getDb();
+  return await db.get(
+    'INSERT INTO users (email, password_hash, google_id) VALUES (?, ?, ?) RETURNING id, email, role',
+    [email.toLowerCase(), passwordHash, googleId]
+  );
 }
 
 export async function updateUser(id, { email, role, passwordHash }) {
