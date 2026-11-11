@@ -36,7 +36,10 @@
                     <h2 id="user-greeting" style="margin: 0;">Dashboard</h2>
                     <small id="user-role" style="color: #6c757d;"></small>
                 </div>
-                <button class="btn-not-attend" onclick="logout()">Sign Out</button>
+                <div>
+                    <button class="btn-not-attend" onclick="deleteMyAccount()">Delete Account</button>
+                    <button class="btn-not-attend" onclick="logout()">Sign Out</button>
+                </div>
             </header>
 
             <!-- Admin Group Creation Form -->
@@ -69,6 +72,49 @@
                             <th>Group Name</th>
                             <th>Assigned Operators</th>
                             <th>Action</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <!-- Populated via JS -->
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Admin Account Management Tab / Section -->
+            <div id="admin-users-container" style="display: none;" class="admin-section">
+                <h3>Account Management (Admin Only)</h3>
+                <div id="user-admin-success" class="success" style="margin-bottom: 10px;"></div>
+
+                <h4>Add New Account</h4>
+                <form id="admin-create-user-form" novalidate style="margin-bottom: 20px;">
+                    <div class="form-group">
+                        <label>Account Email / Name:</label>
+                        <div id="user-admin-error" class="error" style="margin-bottom: 5px;"></div>
+                        <input type="email" id="new-user-email" required placeholder="e.g., user@example.com">
+                    </div>
+                    <div class="form-group">
+                        <label>Password:</label>
+                        <input type="password" id="new-user-password" required placeholder="Password">
+                    </div>
+                    <div class="form-group">
+                        <label>Level / Role:</label>
+                        <select id="new-user-role">
+                            <option value="student">User / Student</option>
+                            <option value="operator">Operator</option>
+                            <option value="admin">Admin</option>
+                        </select>
+                    </div>
+                    <button type="submit" class="btn-primary">Add Account</button>
+                </form>
+
+                <h4>Existing Accounts</h4>
+                <table id="admin-users-table">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Email / Name</th>
+                            <th>Level / Role</th>
+                            <th>Actions</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -144,11 +190,13 @@
                 if (currentUser.role === 'admin') {
                     document.getElementById('admin-group-container').style.display = 'block';
                     document.getElementById('admin-permissions-container').style.display = 'block';
+                    document.getElementById('admin-users-container').style.display = 'block';
                     const usersRes = await fetch('/api/users');
                     if (usersRes.ok) {
                         allUsers = await usersRes.json();
                         // Exclude admin from group operator choices (admins have full rights by default)
                         validOperators = allUsers.filter(u => u.role === 'operator');
+                        renderAdminUsersTable();
                     }
                 }
 
@@ -505,6 +553,135 @@
             async function logout() {
                 await fetch('/api/auth/logout', { method: 'POST' });
                 window.location.href = '/login';
+            }
+
+            async function deleteMyAccount() {
+                const password = prompt('Enter your password to confirm account deletion:');
+                if (!password) return;
+                const res = await fetch('/api/auth/account', {
+                    method: 'DELETE',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ password })
+                });
+                const data = await res.json();
+                if (res.ok && data.success) {
+                    alert('Account deleted successfully.');
+                    window.location.href = '/login';
+                } else {
+                    alert('Failed to delete account: ' + (data.error || 'Invalid password'));
+                }
+            }
+
+            function renderAdminUsersTable() {
+                const tbody = document.querySelector('#admin-users-table tbody');
+                if (!tbody) return;
+                tbody.innerHTML = '';
+                allUsers.forEach(u => {
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
+                        <td>${u.id}</td>
+                        <td>${u.email}</td>
+                        <td>${u.role}</td>
+                        <td>
+                            <button class="btn-primary" onclick="editUser(${u.id}, '${u.email}', '${u.role}')">Edit</button>
+                            <button class="btn-not-attend" onclick="adminDeleteUser(${u.id})">Delete</button>
+                        </td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+            }
+
+            async function editUser(userId, currentEmail, currentRole) {
+                const newEmail = prompt('Enter new email / name:', currentEmail);
+                if (newEmail === null) return;
+                const newRole = prompt('Enter new level (student, operator, admin):', currentRole);
+                if (newRole === null) return;
+                const newPassword = prompt('Enter new password (leave blank to keep current password):');
+                if (newPassword === null) return;
+
+                const body = { email: newEmail, role: newRole };
+                if (newPassword.trim() !== '') {
+                    body.password = newPassword;
+                }
+
+                const res = await fetch(`/api/users/${userId}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body)
+                });
+                const data = await res.json();
+                if (res.ok && data.success) {
+                    alert('Account updated successfully!');
+                    init();
+                } else {
+                    alert('Failed to update account: ' + (data.error || 'Unknown error'));
+                }
+            }
+
+            async function adminDeleteUser(userId) {
+                const password = prompt('Enter your admin password to confirm deleting this user account:');
+                if (!password) return;
+                const res = await fetch(`/api/users/${userId}`, {
+                    method: 'DELETE',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ password })
+                });
+                if (res.ok) {
+                    init();
+                } else {
+                    const data = await res.json();
+                    alert('Failed to delete account: ' + (data.error || 'Unknown error'));
+                }
+            }
+
+            const adminCreateUserForm = document.getElementById('admin-create-user-form');
+            if (adminCreateUserForm) {
+                const newUserEmailInput = document.getElementById('new-user-email');
+                const newUserPasswordInput = document.getElementById('new-user-password');
+                const userAdminError = document.getElementById('user-admin-error');
+                const userAdminSuccess = document.getElementById('user-admin-success');
+
+                const clearMessages = () => {
+                    if (userAdminError) userAdminError.innerText = '';
+                    if (userAdminSuccess) userAdminSuccess.innerText = '';
+                };
+
+                if (newUserEmailInput) newUserEmailInput.addEventListener('input', clearMessages);
+                if (newUserPasswordInput) newUserPasswordInput.addEventListener('input', clearMessages);
+
+                adminCreateUserForm.addEventListener('submit', async (e) => {
+                    e.preventDefault();
+                    clearMessages();
+                    const email = newUserEmailInput.value.trim();
+                    const password = newUserPasswordInput.value;
+                    const role = document.getElementById('new-user-role').value;
+
+                    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+                    if (!email || !emailRegex.test(email)) {
+                        if (userAdminError) userAdminError.innerText = 'Please enter a valid email address (e.g. user@example.com)';
+                        return;
+                    }
+                    if (!password) {
+                        if (userAdminError) userAdminError.innerText = 'Password is required';
+                        return;
+                    }
+
+                    const res = await fetch('/api/users', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ email, password, role })
+                    });
+                    const data = await res.json();
+                    if (res.ok && data.success) {
+                        if (userAdminSuccess) userAdminSuccess.innerText = 'Account created successfully!';
+                        if (userAdminError) userAdminError.innerText = '';
+                        adminCreateUserForm.reset();
+                        init();
+                    } else {
+                        if (userAdminError) userAdminError.innerText = data.error || 'Failed to create account';
+                        if (userAdminSuccess) userAdminSuccess.innerText = '';
+                    }
+                });
             }
 
             init();
