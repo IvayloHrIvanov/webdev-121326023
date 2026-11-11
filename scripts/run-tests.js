@@ -9,9 +9,17 @@ if (!connectionString) {
   process.exit(1);
 }
 
+let cleanConnectionString = connectionString;
+try {
+  const url = new URL(connectionString);
+  url.searchParams.delete('sslmode');
+  cleanConnectionString = url.toString();
+} catch (e) {
+  cleanConnectionString = connectionString.replace(/[?&]sslmode=[^&]*(?:&|$)/g, '');
+}
 const pool = new Pool({
-  connectionString,
-  ssl: connectionString.includes('neon.tech') || connectionString.includes('sslmode=require') ? { rejectUnauthorized: false } : false
+  connectionString: cleanConnectionString,
+  ssl: connectionString.includes('neon.tech') || connectionString.includes('sslmode=') ? { rejectUnauthorized: false } : false
 });
 
 async function takeSnapshot() {
@@ -37,12 +45,7 @@ async function restoreSnapshot(snapshot) {
   try {
     await client.query('BEGIN');
 
-    await client.query('DELETE FROM session_attendance');
-    await client.query('DELETE FROM sessions');
-    await client.query('DELETE FROM group_operators');
-    await client.query('DELETE FROM memberships');
-    await client.query('DELETE FROM groups');
-    await client.query('DELETE FROM users');
+    await client.query('TRUNCATE TABLE session_attendance, sessions, group_operators, memberships, groups, users RESTART IDENTITY CASCADE');
 
     for (const u of snapshot.users) {
       await client.query(
@@ -99,6 +102,18 @@ async function restoreSnapshot(snapshot) {
   }
 }
 
+function runSpawn(args) {
+  return new Promise((resolve) => {
+    const p = spawn('node', args, {
+      stdio: 'inherit',
+      env: { ...process.env, NODE_ENV: 'test' }
+    });
+    p.on('close', (code) => {
+      resolve(code);
+    });
+  });
+}
+
 async function main() {
   let snapshot = null;
   try {
@@ -111,21 +126,60 @@ async function main() {
     process.exit(1);
   }
 
-  const testProcess = spawn('node', ['--env-file-if-exists=.env', '--test', 'tests/**/*.test.js'], {
-    stdio: 'inherit',
-    env: { ...process.env, NODE_ENV: 'test' }
-  });
+  const args = process.argv.slice(2);
+  let exitCode = 0;
 
-  testProcess.on('close', async (code) => {
+  try {
+    if (args.includes('--coverage')) {
+      const code1 = await runSpawn([
+        '--env-file-if-exists=.env',
+        '--test',
+        '--experimental-test-coverage',
+        '--test-coverage-include=src/services/**',
+        '--test-coverage-exclude=tests/**',
+        '--test-coverage-lines=100',
+        '--test-coverage-functions=100',
+        '--test-coverage-branches=100',
+        'tests/**/*.test.js'
+      ]);
+      if (code1 !== 0) {
+        exitCode = code1;
+      } else {
+        await restoreSnapshot(snapshot);
+        const code2 = await runSpawn([
+          '--env-file-if-exists=.env',
+          '--test',
+          '--experimental-test-coverage',
+          '--test-coverage-include=src/**',
+          '--test-coverage-exclude=tests/**',
+          '--test-coverage-lines=80',
+          '--test-coverage-functions=80',
+          '--test-coverage-branches=80',
+          'tests/**/*.test.js'
+        ]);
+        exitCode = code2;
+      }
+    } else {
+      const testArgs = args.length > 0 ? args : ['tests/**/*.test.js'];
+      exitCode = await runSpawn([
+        '--env-file-if-exists=.env',
+        '--test',
+        ...testArgs
+      ]);
+    }
+  } catch (err) {
+    console.error('Error executing tests:', err);
+    exitCode = 1;
+  } finally {
     try {
       await restoreSnapshot(snapshot);
     } catch (err) {
       console.error('Error during snapshot restoration after tests:', err);
     } finally {
       await pool.end();
-      process.exit(code);
+      process.exit(exitCode);
     }
-  });
+  }
 }
 
 main();
