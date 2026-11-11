@@ -6,11 +6,11 @@ import { getDb } from '../src/data/db.js';
 import bcrypt from 'bcrypt';
 import * as sessionService from '../src/services/sessionService.js';
 
-const RUN_ID = Date.now();
+const RUN_ID = `${Date.now()}_${Math.floor(Math.random() * 1000000)}`;
 const EMAIL = `student_nf_${RUN_ID}@example.com`;
 const ADMIN_EMAIL = `admin_nf_${RUN_ID}@example.com`;
 
-describe('New Features Acceptance Tests', () => {
+describe('Feature acceptance tests', () => {
   let agent;
   let adminAgent;
   let userId;
@@ -41,17 +41,23 @@ describe('New Features Acceptance Tests', () => {
   after(async () => {
     const db = getDb();
     if (mathGroupId) {
+      await db.run('DELETE FROM session_attendance WHERE session_id IN (SELECT id FROM sessions WHERE group_id = ?)', [mathGroupId]);
+      await db.run('DELETE FROM group_operators WHERE group_id = ?', [mathGroupId]);
       await db.run('DELETE FROM sessions WHERE group_id = ?', [mathGroupId]);
       await db.run('DELETE FROM memberships WHERE group_id = ?', [mathGroupId]);
       await db.run('DELETE FROM groups WHERE id = ?', [mathGroupId]);
     }
     if (adminId) {
+      await db.run('DELETE FROM session_attendance WHERE user_id = ? OR session_id IN (SELECT id FROM sessions WHERE group_id IN (SELECT id FROM groups WHERE owner_id = ?))', [adminId, adminId]);
+      await db.run('DELETE FROM group_operators WHERE user_id = ? OR group_id IN (SELECT id FROM groups WHERE owner_id = ?)', [adminId, adminId]);
       await db.run('DELETE FROM sessions WHERE group_id IN (SELECT id FROM groups WHERE owner_id = ?)', [adminId]);
       await db.run('DELETE FROM memberships WHERE user_id = ? OR group_id IN (SELECT id FROM groups WHERE owner_id = ?)', [adminId, adminId]);
       await db.run('DELETE FROM groups WHERE owner_id = ?', [adminId]);
       await db.run('DELETE FROM users WHERE id = ?', [adminId]);
     }
     if (userId) {
+      await db.run('DELETE FROM session_attendance WHERE user_id = ?', [userId]);
+      await db.run('DELETE FROM group_operators WHERE user_id = ?', [userId]);
       await db.run('DELETE FROM memberships WHERE user_id = ?', [userId]);
       await db.run('DELETE FROM users WHERE id = ?', [userId]);
     }
@@ -116,15 +122,28 @@ describe('New Features Acceptance Tests', () => {
     expect(res.body.success).to.be.true;
   });
 
-  it('AC-22: A group owner/operator sees the Schedule Session button only for groups they own', async () => {
-    const res = await agent.get('/api/groups');
-    const group = res.body.find(g => g.id === mathGroupId);
-    expect(group).to.exist;
-  });
+  it('AC-22: only a group owner or operator can schedule sessions for that group', async () => {
+    const ownGroupSession = await agent.post('/api/sessions').send({
+      groupId: mathGroupId,
+      title: 'Owner session AC22',
+      startTime: '2030-04-01 10:00:00',
+      endTime: '2030-04-01 11:00:00'
+    });
+    expect(ownGroupSession.status).to.equal(201);
 
-  it('AC-23: Any signed-in user can view available groups, join or leave, and toggle attendance status', async () => {
-    const res = await agent.get('/api/groups');
-    expect(res.status).to.equal(200);
+    const otherGroup = await adminAgent.post('/api/groups').send({
+      name: 'Admin-owned group AC22',
+      courseName: 'Advanced CS'
+    });
+    expect(otherGroup.status).to.equal(201);
+
+    const otherGroupSession = await agent.post('/api/sessions').send({
+      groupId: otherGroup.body.groupId,
+      title: 'Unauthorized session AC22',
+      startTime: '2030-04-02 10:00:00',
+      endTime: '2030-04-02 11:00:00'
+    });
+    expect(otherGroupSession.status).to.equal(403);
   });
 
   it('AC-24: If a user attempts to perform a role-restricted action via direct API request, server responds with 403 Forbidden', async () => {
@@ -135,18 +154,37 @@ describe('New Features Acceptance Tests', () => {
     expect(studentRes.status).to.equal(403);
   });
 
-  it('AC-15: A user can leave a group', async () => {
+  it('AC-15 & AC-23: signed-in users can view groups, join, leave, and toggle session attendance', async () => {
     await agent.post('/api/memberships').send({ groupId: mathGroupId });
 
-    let res = await agent.get('/api/groups');
-    let mathGroup = res.body.find(g => g.id === mathGroupId);
+    const groups = await agent.get('/api/groups');
+    expect(groups.status).to.equal(200);
+    let mathGroup = groups.body.find(g => g.id === mathGroupId);
     expect(mathGroup.is_member).to.equal(1);
+
+    const sessions = await agent.get('/api/sessions');
+    const session = sessions.body.find(item => item.group_id === mathGroupId);
+    expect(session).to.exist;
+
+    const notAttending = await agent
+      .post(`/api/sessions/${session.id}/attendance`)
+      .send({ status: 'not_attending' });
+    expect(notAttending.status).to.equal(200);
+
+    const updatedSessions = await agent.get('/api/sessions');
+    expect(updatedSessions.body.find(item => item.id === session.id).attendance_status)
+      .to.equal('not_attending');
+
+    const attending = await agent
+      .post(`/api/sessions/${session.id}/attendance`)
+      .send({ status: 'attending' });
+    expect(attending.status).to.equal(200);
 
     const leaveRes = await agent.delete('/api/memberships').send({ groupId: mathGroupId });
     expect(leaveRes.status).to.equal(200);
 
-    res = await agent.get('/api/groups');
-    mathGroup = res.body.find(g => g.id === mathGroupId);
+    const groupsAfterLeave = await agent.get('/api/groups');
+    mathGroup = groupsAfterLeave.body.find(g => g.id === mathGroupId);
     expect(mathGroup.is_member).to.equal(0);
   });
 
@@ -181,5 +219,114 @@ describe('New Features Acceptance Tests', () => {
     const delRes = await adminAgent.delete(`/api/groups/${deleteGroupId}`);
     expect(delRes.status).to.equal(200);
     expect(delRes.body.success).to.be.true;
+  });
+
+  it('AC-25: a user can delete their account after confirming their password', async () => {
+    const testAgent = request.agent(app);
+    const tempEmail = `temp_del_${Date.now()}@example.com`;
+    const hashedPassword = await bcrypt.hash('password123', 10);
+    const db = getDb();
+    let tempId;
+
+    try {
+      const user = await db.run(
+        'INSERT INTO users (email, password_hash, role) VALUES (?, ?, ?) RETURNING id',
+        [tempEmail, hashedPassword, 'student']
+      );
+      tempId = user.lastID;
+
+      const login = await testAgent.post('/api/auth/login').send({
+        email: tempEmail,
+        password: 'password123'
+      });
+      expect(login.status).to.equal(200);
+
+      const wrongPassword = await testAgent
+        .delete('/api/auth/account')
+        .send({ password: 'wrongpassword' });
+      expect(wrongPassword.status).to.equal(401);
+
+      const deletion = await testAgent
+        .delete('/api/auth/account')
+        .send({ password: 'password123' });
+      expect(deletion.status).to.equal(200);
+      expect(deletion.body.success).to.be.true;
+      expect(await db.get('SELECT id FROM users WHERE id = ?', [tempId])).to.be.null;
+    } finally {
+      if (tempId) {
+        await db.run('DELETE FROM users WHERE id = ?', [tempId]);
+      }
+    }
+  });
+
+  it('AC-26: an admin can create, update, and delete accounts with admin password authentication', async () => {
+    const managedEmail = `managed_${Date.now()}@example.com`;
+    // Create
+    const createRes = await adminAgent.post('/api/users').send({
+      email: managedEmail,
+      password: 'password123',
+      role: 'operator'
+    });
+    expect(createRes.status).to.equal(200);
+    expect(createRes.body.success).to.be.true;
+    const managedId = createRes.body.user.id;
+
+    // Update
+    const updateRes = await adminAgent.put(`/api/users/${managedId}`).send({
+      email: managedEmail,
+      role: 'admin'
+    });
+    expect(updateRes.status).to.equal(200);
+    expect(updateRes.body.user.role).to.equal('admin');
+
+    // Delete with wrong password fails (401)
+    const failDeleteRes = await adminAgent.delete(`/api/users/${managedId}`).send({ password: 'wrongpassword' });
+    expect(failDeleteRes.status).to.equal(401);
+
+    // Delete with correct admin password succeeds
+    const deleteRes = await adminAgent.delete(`/api/users/${managedId}`).send({ password: 'password123' });
+    expect(deleteRes.status).to.equal(200);
+    expect(deleteRes.body.success).to.be.true;
+  });
+
+  it('Admin creating user with already existing email returns 400 error', async () => {
+    const dupEmail = `dup_${Date.now()}@example.com`;
+    await adminAgent.post('/api/users').send({
+      email: dupEmail,
+      password: 'password123',
+      role: 'student'
+    });
+
+    const res = await adminAgent.post('/api/users').send({
+      email: dupEmail,
+      password: 'password456',
+      role: 'student'
+    });
+    expect(res.status).to.equal(400);
+    expect(res.body.error).to.include('already exists');
+  });
+
+  it('Emails are saved in lowercase and login is case-insensitive for user email', async () => {
+    const mixedEmail = `MixedCase_${Date.now()}@Example.COM`;
+    const createRes = await adminAgent.post('/api/users').send({
+      email: mixedEmail,
+      password: 'password123',
+      role: 'student'
+    });
+    expect(createRes.status).to.equal(200);
+    const createdUserId = createRes.body.user.id;
+    expect(createRes.body.user.email).to.equal(mixedEmail.toLowerCase());
+
+    // Try logging in with uppercase/mixed case email
+    const loginAgent = request.agent(app);
+    const loginRes = await loginAgent.post('/api/auth/login').send({
+      email: mixedEmail.toUpperCase(),
+      password: 'password123'
+    });
+    expect(loginRes.status).to.equal(200);
+    expect(loginRes.body.success).to.be.true;
+
+    // Cleanup
+    await adminAgent.delete(`/api/users/${createdUserId}`).send({ password: 'password123' });
   });
 });

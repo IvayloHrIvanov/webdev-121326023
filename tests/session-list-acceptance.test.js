@@ -5,10 +5,10 @@ import app from '../src/app.js';
 import { getDb } from '../src/data/db.js';
 import bcrypt from 'bcrypt';
 
-const RUN_ID = Date.now();
+const RUN_ID = `${Date.now()}_${Math.floor(Math.random() * 1000000)}`;
 const EMAIL = `student_s1_${RUN_ID}@example.com`;
 
-describe('Slice 1 Acceptance Tests', () => {
+describe('Session list acceptance tests', () => {
   let agent;
   let userId;
   let groupId;
@@ -38,8 +38,10 @@ describe('Slice 1 Acceptance Tests', () => {
   after(async () => {
     const db = getDb();
     if (userId) {
+      await db.run('DELETE FROM session_attendance WHERE session_id IN (SELECT id FROM sessions WHERE group_id IN (SELECT id FROM groups WHERE owner_id = ?))', [userId]);
+      await db.run('DELETE FROM group_operators WHERE group_id IN (SELECT id FROM groups WHERE owner_id = ?)', [userId]);
       await db.run('DELETE FROM sessions WHERE group_id IN (SELECT id FROM groups WHERE owner_id = ?)', [userId]);
-      await db.run('DELETE FROM memberships WHERE user_id = ?', [userId]);
+      await db.run('DELETE FROM memberships WHERE user_id = ? OR group_id IN (SELECT id FROM groups WHERE owner_id = ?)', [userId, userId]);
       await db.run('DELETE FROM groups WHERE owner_id = ?', [userId]);
       await db.run('DELETE FROM users WHERE id = ?', [userId]);
     }

@@ -5,12 +5,12 @@ import app from '../src/app.js';
 import { getDb } from '../src/data/db.js';
 import bcrypt from 'bcrypt';
 
-const RUN_ID = Date.now();
+const RUN_ID = `${Date.now()}_${Math.floor(Math.random() * 1000000)}`;
 const ADMIN_EMAIL = `admin_s2_${RUN_ID}@example.com`;
 const OWNER_EMAIL = `owner_s2_${RUN_ID}@example.com`;
 const STUDENT_EMAIL = `student_s2_${RUN_ID}@example.com`;
 
-describe('Slice 2 Acceptance Tests (RBAC & Session Scheduling)', () => {
+describe('Authorization and session scheduling acceptance tests', () => {
   let adminAgent, ownerAgent, studentAgent;
   let adminId, ownerId, studentId;
   let groupId;
@@ -47,6 +47,8 @@ describe('Slice 2 Acceptance Tests (RBAC & Session Scheduling)', () => {
     const db = getDb();
     const userIds = [adminId, ownerId, studentId].filter(Boolean);
     for (const uid of userIds) {
+      await db.run('DELETE FROM session_attendance WHERE user_id = ? OR session_id IN (SELECT id FROM sessions WHERE group_id IN (SELECT id FROM groups WHERE owner_id = ?))', [uid, uid]);
+      await db.run('DELETE FROM group_operators WHERE user_id = ? OR group_id IN (SELECT id FROM groups WHERE owner_id = ?)', [uid, uid]);
       await db.run('DELETE FROM sessions WHERE group_id IN (SELECT id FROM groups WHERE owner_id = ?)', [uid]);
       await db.run('DELETE FROM memberships WHERE user_id = ? OR group_id IN (SELECT id FROM groups WHERE owner_id = ?)', [uid, uid]);
       await db.run('DELETE FROM groups WHERE owner_id = ?', [uid]);
@@ -85,7 +87,7 @@ describe('Slice 2 Acceptance Tests (RBAC & Session Scheduling)', () => {
     expect(res.body.error).to.include('Quantum Mechanics');
   });
 
-  it('AC-20: A user who is not the group owner (student) receives a 403 forbidden response when attempting to schedule a session', async () => {
+  it('AC-20: a non-owner receives 403 when scheduling or cancelling another group session', async () => {
     const res = await studentAgent.post('/api/sessions').send({
       groupId,
       title: 'Student Unauthorized Session',
@@ -93,5 +95,16 @@ describe('Slice 2 Acceptance Tests (RBAC & Session Scheduling)', () => {
       endTime: '2030-07-02 11:30:00'
     });
     expect(res.status).to.equal(403);
+
+    const ownerSession = await ownerAgent.post('/api/sessions').send({
+      groupId,
+      title: 'Owner session for AC20 cancellation',
+      startTime: '2030-07-02 10:00:00',
+      endTime: '2030-07-02 11:30:00'
+    });
+    expect(ownerSession.status).to.equal(201);
+
+    const cancellation = await studentAgent.delete(`/api/sessions/${ownerSession.body.sessionId}`);
+    expect(cancellation.status).to.equal(403);
   });
 });

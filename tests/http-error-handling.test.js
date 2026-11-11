@@ -3,7 +3,7 @@ import request from 'supertest';
 import { expect } from 'chai';
 import app from '../src/app.js';
 
-describe('Health and Error Handling Tests', () => {
+describe('HTTP health and error handling', () => {
   it('GET /health returns 200 and ok status when DB is up', async () => {
     const res = await request(app).get('/health');
     expect(res.status).to.equal(200);
@@ -25,5 +25,27 @@ describe('Health and Error Handling Tests', () => {
     expect(res.status).to.equal(400);
     expect(res.body).to.have.property('error');
     expect(res.text).to.not.include('at ');
+  });
+
+  it('POST with an oversized JSON body preserves the parser error status', async () => {
+    const originalConsoleError = console.error;
+    let loggedError;
+    console.error = (...args) => {
+      loggedError = args;
+    };
+
+    try {
+      const res = await request(app)
+        .post('/api/groups')
+        .set('Content-Type', 'application/json')
+        .send(Buffer.alloc(1024 * 1024, 'x'));
+
+      expect(res.status).to.equal(413);
+      expect(res.body).to.deep.equal({ error: 'An unexpected error occurred on the server.' });
+      expect(loggedError[0]).to.equal('Server error stack:');
+      expect(loggedError[1].type).to.equal('entity.too.large');
+    } finally {
+      console.error = originalConsoleError;
+    }
   });
 });
