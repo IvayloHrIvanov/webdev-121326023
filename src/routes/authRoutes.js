@@ -36,4 +36,19 @@ router.post('/logout', (req, res) => {
   });
 });
 
+router.delete('/account', async (req, res) => {
+  if (!req.session || !req.session.userId) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  try {
+    const { password } = req.body;
+    await authService.deleteAccount(req.session.userId, password);
+    req.session.destroy(() => {
+      return res.json({ success: true });
+    });
+  } catch (err) {
+    return res.status(err.status || 500).json({ error: err.message });
+  }
+});
+
 export default router;

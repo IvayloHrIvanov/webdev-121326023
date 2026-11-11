@@ -73,8 +73,10 @@ app.use((req, res) => {
 
 // Global error handler
 app.use((err, req, res, next) => {
-  console.error('Server error stack:', err);
   const isSyntaxError = err instanceof SyntaxError && err.status === 400 && 'body' in err;
+  if (!isSyntaxError) {
+    console.error('Server error stack:', err);
+  }
   const status = isSyntaxError || err.status === 400 ? 400 : (err.status || 500);
   const message = status === 400 
     ? 'The request could not be processed due to invalid syntax or broken JSON.' 
