@@ -298,6 +298,18 @@ th {
     margin-bottom: var(--space-1);
 }
 
+.confirm-password {
+    margin-bottom: var(--space-5);
+}
+
+.confirm-password[aria-invalid="true"] {
+    margin-bottom: 0;
+}
+
+.confirm-password[aria-invalid="true"] + .field-error {
+    margin-bottom: var(--space-5);
+}
+
 .visually-hidden {
     position: absolute;
     width: 1px;
