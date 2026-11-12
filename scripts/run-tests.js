@@ -1,66 +1,29 @@
 import { spawn } from 'child_process';
-import { randomBytes } from 'node:crypto';
-import pg from 'pg';
+import {
+  createDatabasePool,
+  createTestSchema,
+  dropTestSchema,
+  getTestDatabaseUrl
+} from './test-database-isolation.js';
 
-const { Pool } = pg;
-
-const connectionString = process.env.DATABASE_URL;
+const connectionString = getTestDatabaseUrl();
 if (!connectionString) {
   console.error('DATABASE_URL environment variable is missing');
   process.exit(1);
 }
 
-let cleanConnectionString = connectionString;
-try {
-  const url = new URL(connectionString);
-  url.searchParams.delete('sslmode');
-  cleanConnectionString = url.toString();
-} catch (e) {
-  cleanConnectionString = connectionString.replace(/[?&]sslmode=[^&]*(?:&|$)/g, '');
-}
-const pool = new Pool({
-  connectionString: cleanConnectionString,
-  ssl: connectionString.includes('neon.tech') || connectionString.includes('sslmode=') ? { rejectUnauthorized: false } : false
-});
+const pool = createDatabasePool(connectionString);
 
-async function createTestSchema() {
-  const schemaName = `test_${randomBytes(12).toString('hex')}`;
-  await pool.query(`CREATE SCHEMA "${schemaName}"`);
-
-  const testUrl = new URL(connectionString);
-  testUrl.hostname = testUrl.hostname.replace(/-pooler(?=\.|$)/, '');
-  testUrl.searchParams.set('options', `-c search_path=${schemaName}`);
-  const testPool = new Pool({
-    connectionString: testUrl.toString(),
-    ssl: connectionString.includes('neon.tech') || connectionString.includes('sslmode=') ? { rejectUnauthorized: false } : false
-  });
-
-  try {
-    const result = await testPool.query('SELECT current_schema() AS schema');
-    if (result.rows[0].schema !== schemaName) {
-      throw new Error('PostgreSQL did not select the temporary test schema');
-    }
-  } catch (err) {
-    await pool.query(`DROP SCHEMA IF EXISTS "${schemaName}" CASCADE`);
-    throw err;
-  } finally {
-    await testPool.end();
-  }
-
-  return { schemaName, databaseUrl: testUrl.toString() };
-}
-
-async function dropTestSchema(schemaName) {
-  if (schemaName) {
-    await pool.query(`DROP SCHEMA IF EXISTS "${schemaName}" CASCADE`);
-  }
-}
-
-function runSpawn(args, databaseUrl) {
+function runSpawn(args, databaseUrl, schemaName) {
   return new Promise((resolve) => {
     const p = spawn('node', args, {
       stdio: 'inherit',
-      env: { ...process.env, DATABASE_URL: databaseUrl, NODE_ENV: 'test' }
+      env: {
+        ...process.env,
+        DATABASE_URL: databaseUrl,
+        NODE_ENV: 'test',
+        TEST_DATABASE_SCHEMA: schemaName
+      }
     });
     p.on('close', (code) => {
       resolve(code);
@@ -81,10 +44,10 @@ async function main() {
 
   const args = process.argv.slice(2);
   const runIsolated = async (testArgs) => {
-    await dropTestSchema(activeSchema);
-    const testSchema = await createTestSchema();
+    await dropTestSchema(connectionString, activeSchema);
+    const testSchema = await createTestSchema(connectionString);
     activeSchema = testSchema.schemaName;
-    return await runSpawn(testArgs, testSchema.databaseUrl);
+    return await runSpawn(testArgs, testSchema.databaseUrl, testSchema.schemaName);
   };
 
   try {
@@ -129,7 +92,7 @@ async function main() {
     exitCode = 1;
   } finally {
     try {
-      await dropTestSchema(activeSchema);
+      await dropTestSchema(connectionString, activeSchema);
     } catch (err) {
       console.error('Failed to remove the temporary test schema:', err.message);
       exitCode = 1;

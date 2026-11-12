@@ -1,3 +1,4 @@
+import '../scripts/test-database-setup.js';
 import { describe, it } from 'node:test';
 import request from 'supertest';
 import { expect } from 'chai';
@@ -9,6 +10,8 @@ describe('HTTP API routes', () => {
     const res = await request(app).get('/api/auth/me');
     expect(res.status).to.equal(401);
     expect(res.body).to.have.property('error');
+    await request(app).get('/set-password').expect(302).expect('Location', '/login');
+    await request(app).post('/api/auth/set-password').send({ password: 'new-password' }).expect(401);
   });
 
   it('POST /api/auth/login rejects invalid credentials', async () => {
@@ -17,6 +20,33 @@ describe('HTTP API routes', () => {
       .send({ email: 'nonexistent@example.com', password: 'wrong' });
     expect(res.status).to.equal(401);
     expect(res.body.error).to.equal('Invalid email or password');
+  });
+
+  it('AC-28: Local registration creates a signed-in student account and rejects duplicate e-mails', async () => {
+    const email = `register_${Date.now()}@example.com`;
+    const password = '!';
+    const agent = request.agent(app);
+
+    try {
+      const registration = await agent.post('/api/auth/register').send({ email, password });
+      expect(registration.status).to.equal(201);
+      expect(registration.body.user.role).to.equal('student');
+
+      const profile = await agent.get('/api/auth/me').expect(200);
+      expect(profile.body.email).to.equal(email);
+      expect(profile.body.role).to.equal('student');
+
+      await agent.post('/api/auth/register').send({ email, password }).expect(409);
+
+      const loginAgent = request.agent(app);
+      const login = await loginAgent.post('/api/auth/login').send({ email, password });
+      expect(login.status).to.equal(200);
+      expect(login.body.user.role).to.equal('student');
+
+      await agent.delete('/api/auth/account').send({ password }).expect(200);
+    } finally {
+      await getDb().run('DELETE FROM users WHERE email = ?', [email]);
+    }
   });
 
   it('GET /api/auth/google starts a state- and PKCE-protected Google sign-in', async () => {
@@ -77,7 +107,7 @@ describe('HTTP API routes', () => {
     }
   });
 
-  it('GET /api/auth/google/callback signs in a verified Google user', async () => {
+  it('AC-27: A new Google registration must set an app password before using or deleting the account', async () => {
     const previousEnv = {
       GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID,
       GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET,
@@ -100,10 +130,39 @@ describe('HTTP API routes', () => {
       const callback = await agent
         .get(`/api/auth/google/callback?state=${encodeURIComponent(state)}&code=test-code`)
         .expect(302);
-      expect(callback.headers.location).to.equal('/sessions');
+      expect(callback.headers.location).to.equal('/set-password');
 
       const profile = await agent.get('/api/auth/me').expect(200);
       expect(profile.body.email).to.equal(email);
+      expect(profile.body.passwordSetupRequired).to.equal(true);
+
+      const passwordPage = await agent.get('/set-password').expect(200);
+      expect(passwordPage.text).to.include('Set an app password');
+      expect(passwordPage.text).to.include('theme-toggle');
+      await agent.get('/sessions').expect(302).expect('Location', '/set-password');
+      await agent.get('/api/groups').expect(403);
+
+      await agent.post('/api/auth/set-password').send({ password: '' }).expect(400);
+      await agent.post('/api/auth/set-password').send({
+        password: 'new-app-password-27'
+      }).expect(200);
+
+      const updatedProfile = await agent.get('/api/auth/me').expect(200);
+      expect(updatedProfile.body.passwordSetupRequired).to.equal(false);
+      await agent.get('/api/groups').expect(200);
+
+      const returningAgent = request.agent(app);
+      const returningStart = await returningAgent.get('/api/auth/google').expect(302);
+      const returningState = new URL(returningStart.headers.location).searchParams.get('state');
+      const returningCallback = await returningAgent
+        .get(`/api/auth/google/callback?state=${encodeURIComponent(returningState)}&code=test-code`)
+        .expect(302);
+      expect(returningCallback.headers.location).to.equal('/sessions');
+      expect((await returningAgent.get('/api/auth/me').expect(200)).body.passwordSetupRequired)
+        .to.equal(false);
+
+      await agent.delete('/api/auth/account').send({ password: 'incorrect-password' }).expect(401);
+      await agent.delete('/api/auth/account').send({ password: 'new-app-password-27' }).expect(200);
     } finally {
       globalThis.fetch = originalFetch;
       await getDb().run('DELETE FROM users WHERE google_id = ?', [googleId]);
@@ -194,6 +253,9 @@ describe('HTTP API routes', () => {
     const meRes = await request(app).get('/api/auth/me').set('Cookie', cookie);
     expect(meRes.status).to.equal(200);
     expect(meRes.body).to.have.property('id');
+    expect(meRes.body.passwordSetupRequired).to.equal(false);
+    await request(app).get('/set-password').set('Cookie', cookie)
+      .expect(302).expect('Location', '/sessions');
 
     const groupsRes = await request(app).get('/api/groups').set('Cookie', cookie);
     expect(groupsRes.status).to.equal(200);

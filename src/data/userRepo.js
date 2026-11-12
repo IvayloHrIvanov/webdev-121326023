@@ -8,7 +8,18 @@ export async function findUserByEmail(email) {
 
 export async function findUserByGoogleId(googleId) {
   const db = getDb();
-  return await db.get('SELECT id, email, role FROM users WHERE google_id = ?', [googleId]);
+  return await db.get(
+    'SELECT id, email, role, has_local_password FROM users WHERE google_id = ?',
+    [googleId]
+  );
+}
+
+export async function linkGoogleId(userId, googleId) {
+  const db = getDb();
+  return await db.get(
+    'UPDATE users SET google_id = ? WHERE id = ? AND google_id IS NULL RETURNING id, email, role, has_local_password',
+    [googleId, userId]
+  );
 }
 
 export async function findUserById(id) {
@@ -39,8 +50,19 @@ export async function createUser(email, passwordHash, role = 'student') {
 export async function createGoogleUser(email, passwordHash, googleId) {
   const db = getDb();
   return await db.get(
-    'INSERT INTO users (email, password_hash, google_id) VALUES (?, ?, ?) RETURNING id, email, role',
+    'INSERT INTO users (email, password_hash, google_id, has_local_password) VALUES (?, ?, ?, FALSE) RETURNING id, email, role, has_local_password',
     [email.toLowerCase(), passwordHash, googleId]
+  );
+}
+
+export async function setLocalPasswordForGoogleUser(userId, passwordHash) {
+  const db = getDb();
+  return await db.get(
+    `UPDATE users
+     SET password_hash = ?, has_local_password = TRUE
+     WHERE id = ? AND google_id IS NOT NULL AND has_local_password = FALSE
+     RETURNING id`,
+    [passwordHash, userId]
   );
 }
 
@@ -49,7 +71,7 @@ export async function updateUser(id, { email, role, passwordHash }) {
   const lowerEmail = email ? email.toLowerCase() : email;
   if (passwordHash) {
     return await db.run(
-      'UPDATE users SET email = ?, role = ?, password_hash = ? WHERE id = ?',
+      'UPDATE users SET email = ?, role = ?, password_hash = ?, has_local_password = TRUE WHERE id = ?',
       [lowerEmail, role, passwordHash, id]
     );
   } else {
