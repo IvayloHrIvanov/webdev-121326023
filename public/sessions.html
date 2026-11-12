@@ -9,9 +9,10 @@
     </head>
     <body class="dashboard-page">
         <div class="container">
-            <header>
+            <header class="dashboard-header">
                 <div>
                     <h2 id="user-greeting" class="user-greeting">Dashboard</h2>
+                    <p class="dashboard-tagline">Your study groups, sessions, and tools in one place.</p>
                     <small id="user-role"></small>
                 </div>
                 <div>
@@ -28,10 +29,21 @@
                     <button class="btn-not-attend" onclick="logout()">Sign Out</button>
                 </div>
             </header>
+        </div>
 
-            <!-- Admin Group Creation Form -->
-            <div id="admin-group-container" class="admin-section" hidden>
-                <h3>Create New Study Group (Admin Only)</h3>
+        <nav class="dashboard-nav" aria-label="Dashboard sections">
+            <a href="#upcoming-sessions">Upcoming sessions</a>
+            <a href="#study-groups">Study groups</a>
+            <a href="#notes-summariser">Notes summariser</a>
+            <a href="#admin-group-container" class="admin-nav-link" hidden>Manage groups</a>
+            <a href="#admin-permissions-container" class="admin-nav-link" hidden>Operator access</a>
+            <a href="#admin-users-container" class="admin-nav-link" hidden>Accounts</a>
+        </nav>
+
+        <!-- Admin Group Creation Form -->
+        <div id="admin-tools" class="admin-tools" hidden>
+            <details id="admin-group-container" class="admin-section" hidden>
+                <summary><span class="admin-section-title">Create a study group</span><span class="section-hint">Admin</span></summary>
                 <div id="group-error" class="error" role="alert" aria-live="polite"></div>
                 <div id="group-success" class="success" role="status" aria-live="polite"></div>
                 <form id="create-group-form">
@@ -45,11 +57,11 @@
                     </div>
                     <button type="submit" class="btn-primary">Create Group</button>
                 </form>
-            </div>
+            </details>
 
             <!-- Admin Operator Permissions Window -->
-            <div id="admin-permissions-container" class="admin-section" hidden>
-                <h3>Operator Permissions Management (Admin Only)</h3>
+            <details id="admin-permissions-container" class="admin-section" hidden>
+                <summary><span class="admin-section-title">Operator access</span><span class="section-hint">Assign group owners</span></summary>
                 <p>Assign multiple operators/owners (Operator accounts only) to control specific groups:</p>
                 <div id="perm-error" class="error"></div>
                 <div id="perm-success" class="success"></div>
@@ -65,11 +77,11 @@
                         <tr><td colspan="3">Loading group permissions...</td></tr>
                     </tbody>
                 </table>
-            </div>
+            </details>
 
             <!-- Admin Account Management Tab / Section -->
-            <div id="admin-users-container" class="admin-section" hidden>
-                <h3>Account Management (Admin Only)</h3>
+            <details id="admin-users-container" class="admin-section" hidden>
+                <summary><span class="admin-section-title">Account management</span><span class="section-hint">Admin</span></summary>
                 <div id="user-admin-success" class="success spaced-message" role="status" aria-live="polite"></div>
 
                 <h4>Add New Account</h4>
@@ -108,34 +120,18 @@
                         <tr><td colspan="4">Loading accounts...</td></tr>
                     </tbody>
                 </table>
-            </div>
+            </details>
         </div>
 
         <div id="dashboard-error" class="error dashboard-error" role="alert" aria-live="polite"></div>
 
-        <div class="container">
-            <h2>Study Session Notes Summariser (AI Feature)</h2>
-            <p>Paste completed study session notes below to generate an AI-powered two-line summary and topic tags.</p>
-            <div id="summarise-error" class="error" role="alert" aria-live="polite"></div>
-            <div id="summarise-success" class="success" role="status" aria-live="polite"></div>
-            <form id="summarise-form">
-                <div class="form-group">
-                    <label for="notes-input">Session Notes:</label>
-                    <textarea id="notes-input" class="notes-input" rows="4" required placeholder="Enter study session notes here..."></textarea>
+        <div class="container dashboard-panel" id="upcoming-sessions">
+            <div class="section-heading">
+                <div>
+                    <p class="eyebrow">Your schedule</p>
+                    <h2>Upcoming sessions</h2>
                 </div>
-                <button type="submit" id="summarise-btn" class="btn-primary">Summarise Notes</button>
-            </form>
-            <div id="summarise-result" class="summary-result" hidden>
-                <h4 id="result-title">AI Suggestion Result (Distinct from Database Facts):</h4>
-                <p><strong>Summary:</strong></p>
-                <p id="result-summary" class="summary-output"></p>
-                <p id="result-tags-label"><strong>Suggested Tags:</strong></p>
-                <div id="result-tags" class="summary-tags"></div>
             </div>
-        </div>
-
-        <div class="container">
-            <h2>Upcoming Study Sessions</h2>
             <table id="sessions-table">
                 <thead>
                     <tr>
@@ -151,8 +147,13 @@
             </table>
         </div>
 
-        <div class="container">
-            <h2>Available Study Groups</h2>
+        <div class="container dashboard-panel" id="study-groups">
+            <div class="section-heading">
+                <div>
+                    <p class="eyebrow">Find your people</p>
+                    <h2>Study groups</h2>
+                </div>
+            </div>
             <form id="group-search-form" class="group-search-form">
                 <label for="group-interest">Find a group by course or topic:</label>
                 <div class="group-search-controls">
@@ -175,6 +176,32 @@
                     <tr><td colspan="4">Loading study groups...</td></tr>
                 </tbody>
             </table>
+        </div>
+
+        <div class="container dashboard-panel" id="notes-summariser">
+            <div class="section-heading">
+                <div>
+                    <p class="eyebrow">Study tools</p>
+                    <h2>Notes summariser</h2>
+                </div>
+            </div>
+            <p>Paste completed study session notes below to generate an AI-powered two-line summary and topic tags.</p>
+            <div id="summarise-error" class="error" role="alert" aria-live="polite"></div>
+            <div id="summarise-success" class="success" role="status" aria-live="polite"></div>
+            <form id="summarise-form">
+                <div class="form-group">
+                    <label for="notes-input">Session Notes:</label>
+                    <textarea id="notes-input" class="notes-input" rows="4" required placeholder="Enter study session notes here..."></textarea>
+                </div>
+                <button type="submit" id="summarise-btn" class="btn-primary">Summarise Notes</button>
+            </form>
+            <div id="summarise-result" class="summary-result" hidden>
+                <h4 id="result-title">AI Suggestion Result (Distinct from Database Facts):</h4>
+                <p><strong>Summary:</strong></p>
+                <p id="result-summary" class="summary-output"></p>
+                <p id="result-tags-label"><strong>Suggested Tags:</strong></p>
+                <div id="result-tags" class="summary-tags"></div>
+            </div>
         </div>
 
         <script>
@@ -209,9 +236,13 @@
                     document.getElementById('user-role').innerText = `Role: ${currentUser.role.toUpperCase()}`;
 
                     if (currentUser.role === 'admin') {
+                        document.getElementById('admin-tools').hidden = false;
                         document.getElementById('admin-group-container').hidden = false;
                         document.getElementById('admin-permissions-container').hidden = false;
                         document.getElementById('admin-users-container').hidden = false;
+                        document.querySelectorAll('.admin-nav-link').forEach(link => {
+                            link.hidden = false;
+                        });
                         const usersRes = await fetch('/api/users');
                         if (!usersRes.ok) throw new Error('Unable to load account management.');
                         allUsers = await usersRes.json();
@@ -224,6 +255,13 @@
                     document.getElementById('dashboard-error').innerText = 'Could not load your dashboard. Please try again.';
                 }
             }
+
+            document.querySelector('.dashboard-nav').addEventListener('click', (event) => {
+                const link = event.target.closest('a[href^="#admin-"]');
+                if (link) {
+                    document.querySelector(link.getAttribute('href')).open = true;
+                }
+            });
 
             function renderSessions(sessions) {
                 const sTbody = document.querySelector('#sessions-table tbody');
