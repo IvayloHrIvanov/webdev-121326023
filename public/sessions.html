@@ -625,12 +625,12 @@
                         return;
                     }
 
-                    const nowAttending = status !== 'attending';
-                    button.textContent = nowAttending ? 'Will Not Attend' : 'Attend';
-                    button.className = nowAttending ? 'btn-not-attend' : 'btn-attend';
+                    const isAttending = status === 'attending';
+                    button.textContent = isAttending ? 'Will Not Attend' : 'Attend';
+                    button.className = isAttending ? 'btn-not-attend' : 'btn-attend';
                     button.setAttribute(
                         'onclick',
-                        `toggleSessionAttendance(${sessionId}, '${nowAttending ? 'not_attending' : 'attending'}', this)`
+                        `toggleSessionAttendance(${sessionId}, '${isAttending ? 'not_attending' : 'attending'}', this)`
                     );
                 } catch {
                     alert('Failed to update session attendance. Please try again.');
