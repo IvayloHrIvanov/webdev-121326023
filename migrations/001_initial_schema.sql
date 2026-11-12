@@ -50,16 +50,6 @@ INSERT INTO groups (name, course_name, owner_id)
 SELECT 'CS Basics', 'Computer Science 50', id FROM users WHERE email = 'operator@example.com'
 ON CONFLICT DO NOTHING;
 
-INSERT INTO memberships (user_id, group_id)
-SELECT u.id, g.id FROM users u, groups g
-WHERE u.email = 'student@example.com' AND g.name IN ('Math Study Group', 'CS Basics')
-ON CONFLICT (user_id, group_id) DO NOTHING;
-
-INSERT INTO memberships (user_id, group_id)
-SELECT u.id, g.id FROM users u, groups g
-WHERE u.email = 'operator@example.com' AND g.name IN ('Math Study Group', 'CS Basics')
-ON CONFLICT (user_id, group_id) DO NOTHING;
-
 INSERT INTO sessions (group_id, title, start_time)
 SELECT g.id, 'Algebra Review', NOW() + INTERVAL '2 days' FROM groups g WHERE g.name = 'Math Study Group'
 AND NOT EXISTS (SELECT 1 FROM sessions WHERE group_id = g.id AND title = 'Algebra Review');
