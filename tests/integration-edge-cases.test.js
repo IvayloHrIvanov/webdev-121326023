@@ -1,3 +1,4 @@
+import '../scripts/test-database-setup.js';
 import { describe, it, before, after } from 'node:test';
 import request from 'supertest';
 import { expect } from 'chai';
@@ -12,7 +13,7 @@ const { Pool } = pg;
 const RUN_ID = `${Date.now()}_${Math.floor(Math.random() * 1000000)}`;
 const ADMIN_EMAIL = `admin_cov_${RUN_ID}@example.com`;
 
-describe('Application and data integration edge cases', () => {
+describe('Application configuration, routing, and persistence', () => {
   let adminId;
 
   before(async () => {
@@ -86,6 +87,26 @@ describe('Application and data integration edge cases', () => {
     await agent.post('/api/auth/login').send({ email: ADMIN_EMAIL, password: 'password123' });
     const resSessions = await agent.get('/sessions');
     expect(resSessions.status).to.equal(200);
+  });
+
+  describe('Theme page integration', () => {
+    it('serves the shared assets and includes the toggle on login and sessions pages', async () => {
+      const loginPage = await request(app).get('/login');
+      expect(loginPage.text).to.include('class="theme-toggle"');
+
+      const agent = request.agent(app);
+      await agent.post('/api/auth/login').send({ email: ADMIN_EMAIL, password: 'password123' });
+      const sessionsPage = await agent.get('/sessions');
+      expect(sessionsPage.text).to.include('class="theme-toggle"');
+
+      const themeCss = await request(app).get('/theme.css');
+      const themeScript = await request(app).get('/theme.js');
+      expect(themeCss.status).to.equal(200);
+      expect(themeScript.status).to.equal(200);
+      expect(themeCss.text).to.include('html[data-theme="dark"] textarea');
+      expect(themeCss.text).to.include('html[data-theme="dark"] .summary-output');
+      expect(themeScript.text).to.include("localStorage.setItem('study-groups-theme'");
+    });
   });
 
   it('login returns a server error when the email has an invalid type', async () => {

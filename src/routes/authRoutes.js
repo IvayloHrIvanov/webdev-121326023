@@ -10,7 +10,8 @@ router.get('/me', (req, res) => {
   return res.json({
     id: req.session.userId,
     email: req.session.userEmail,
-    role: req.session.role
+    role: req.session.role,
+    passwordSetupRequired: req.session.passwordSetupRequired === true
   });
 });
 
@@ -24,9 +25,84 @@ router.post('/login', async (req, res) => {
     req.session.userId = user.id;
     req.session.userEmail = user.email;
     req.session.role = user.role;
+    req.session.passwordSetupRequired = false;
     return res.json({ success: true, user });
   } catch (err) {
     return res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/register', async (req, res) => {
+  try {
+    const user = await authService.registerUser(req.body?.email, req.body?.password);
+    req.session.userId = user.id;
+    req.session.userEmail = user.email;
+    req.session.role = user.role;
+    req.session.passwordSetupRequired = false;
+    return res.status(201).json({ success: true, user });
+  } catch (err) {
+    return res.status(err.status || 500).json({ error: err.message });
+  }
+});
+
+router.post('/set-password', async (req, res) => {
+  if (!req.session || !req.session.userId) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  try {
+    await authService.setGoogleAccountPassword(req.session.userId, req.body?.password);
+    req.session.passwordSetupRequired = false;
+    return res.json({ success: true });
+  } catch (err) {
+    return res.status(err.status || 500).json({ error: err.message });
+  }
+});
+
+router.get('/google', (req, res) => {
+  try {
+    const state = randomBytes(32).toString('base64url');
+    const codeVerifier = randomBytes(32).toString('base64url');
+    const codeChallenge = createHash('sha256').update(codeVerifier).digest('base64url');
+    req.session.googleOAuth = { state, codeVerifier };
+    const authorizationUrl = authService.createGoogleAuthorizationUrl({
+      state,
+      codeChallenge,
+      redirectUri: googleRedirectUri()
+    });
+    return res.redirect(authorizationUrl);
+  } catch (err) {
+    const code = err.status === 503 ? 'google_not_configured' : 'google_sign_in_failed';
+    return res.redirect(googleErrorRedirect(code));
+  }
+});
+
+router.get('/google/callback', async (req, res) => {
+  const pending = req.session?.googleOAuth;
+  delete req.session?.googleOAuth;
+  if (!pending || !matchesState(pending.state, req.query.state)) {
+    return res.redirect(googleErrorRedirect('google_state_mismatch'));
+  }
+  if (req.query.error || typeof req.query.code !== 'string') {
+    return res.redirect(googleErrorRedirect('google_sign_in_cancelled'));
+  }
+
+  try {
+    const user = await authService.authenticateGoogleCode({
+      code: req.query.code,
+      codeVerifier: pending.codeVerifier,
+      redirectUri: googleRedirectUri()
+    });
+    await new Promise((resolve, reject) => {
+      req.session.regenerate((err) => err ? reject(err) : resolve());
+    });
+    req.session.userId = user.id;
+    req.session.userEmail = user.email;
+    req.session.role = user.role;
+    req.session.passwordSetupRequired = user.passwordSetupRequired === true;
+    return res.redirect(req.session.passwordSetupRequired ? '/set-password' : '/sessions');
+  } catch (err) {
+    const code = err.status === 409 ? 'google_account_exists' : 'google_sign_in_failed';
+    return res.redirect(googleErrorRedirect(code));
   }
 });
 

@@ -1,3 +1,4 @@
+import '../scripts/test-database-setup.js';
 import { describe, it, before, after } from 'node:test';
 import request from 'supertest';
 import { expect } from 'chai';
@@ -5,6 +6,7 @@ import app from '../src/app.js';
 import { getDb } from '../src/data/db.js';
 import bcrypt from 'bcrypt';
 import * as sessionService from '../src/services/sessionService.js';
+import { callProjectTool } from '../mcp-server/project-tools.js';
 
 const RUN_ID = `${Date.now()}_${Math.floor(Math.random() * 1000000)}`;
 const EMAIL = `student_nf_${RUN_ID}@example.com`;
@@ -16,6 +18,7 @@ describe('Feature acceptance tests', () => {
   let userId;
   let adminId;
   let mathGroupId;
+  let physicsGroupId;
 
   before(async () => {
     const db = getDb();
@@ -26,8 +29,12 @@ describe('Feature acceptance tests', () => {
     const adminRes = await db.run('INSERT INTO users (email, password_hash, role) VALUES (?, ?, ?) RETURNING id', [ADMIN_EMAIL, hashedPassword, 'admin']);
     adminId = adminRes.lastID;
 
-    const groupRes = await db.run('INSERT INTO groups (name, course_name, owner_id) VALUES (?, ?, ?) RETURNING id', ['Math Group NF', 'Math 101', userId]);
+    const groupRes = await db.run('INSERT INTO groups (name, course_name, owner_id) VALUES (?, ?, ?) RETURNING id', ['Math Group NF', 'Math 101', adminId]);
     mathGroupId = groupRes.lastID;
+    await db.run('INSERT INTO memberships (user_id, group_id) VALUES (?, ?)', [adminId, mathGroupId]);
+    const physicsRes = await db.run('INSERT INTO groups (name, course_name, owner_id) VALUES (?, ?, ?) RETURNING id', ['Physics Group NF', 'Physics 101', adminId]);
+    physicsGroupId = physicsRes.lastID;
+    await db.run('INSERT INTO memberships (user_id, group_id) VALUES (?, ?)', [adminId, physicsGroupId]);
 
     await db.run('INSERT INTO sessions (group_id, title, start_time, end_time) VALUES (?, ?, ?, ?)', [mathGroupId, 'Algebra Review NF', '2030-01-01 14:30:00', '2030-01-01 16:00:00']);
 
@@ -47,6 +54,10 @@ describe('Feature acceptance tests', () => {
       await db.run('DELETE FROM memberships WHERE group_id = ?', [mathGroupId]);
       await db.run('DELETE FROM groups WHERE id = ?', [mathGroupId]);
     }
+    if (physicsGroupId) {
+      await db.run('DELETE FROM memberships WHERE group_id = ?', [physicsGroupId]);
+      await db.run('DELETE FROM groups WHERE id = ?', [physicsGroupId]);
+    }
     if (adminId) {
       await db.run('DELETE FROM session_attendance WHERE user_id = ? OR session_id IN (SELECT id FROM sessions WHERE group_id IN (SELECT id FROM groups WHERE owner_id = ?))', [adminId, adminId]);
       await db.run('DELETE FROM group_operators WHERE user_id = ? OR group_id IN (SELECT id FROM groups WHERE owner_id = ?)', [adminId, adminId]);
@@ -63,14 +74,16 @@ describe('Feature acceptance tests', () => {
     }
   });
 
-  it('AC-3: A group owner who fills out the session scheduling form with valid data and schedules sees the event', async () => {
-    const res = await agent.post('/api/sessions').send({
+  it('AC-3: A group owner sees a newly scheduled session in their upcoming session list', async () => {
+    const res = await adminAgent.post('/api/sessions').send({
       groupId: mathGroupId,
       title: 'Calculus Session AC3',
       startTime: '2030-02-01 10:00:00',
       endTime: '2030-02-01 11:30:00'
     });
     expect(res.status).to.equal(201);
+    const sessions = await adminAgent.get('/api/sessions');
+    expect(sessions.body.some(session => session.id === res.body.sessionId)).to.be.true;
   });
 
   it('AC-4: A group member who opens the upcoming events section sees a chronological list of future study sessions', async () => {
@@ -91,19 +104,45 @@ describe('Feature acceptance tests', () => {
   });
 
   it('AC-6: A user who submits session notes to the summarise_notes feature sees a generated summary and tags from fixed list', async () => {
-    const fakeClient = async (notes) => ({
-      summary: 'Summary line 1\nSummary line 2',
-      tags: ['Databases', 'Testing', 'Algorithms']
-    });
-    const result = await sessionService.summariseNotes('Some notes about databases and testing', { client: fakeClient });
+    const submittedNotes = 'Some notes about databases and testing';
+    let receivedNotes;
+    const fakeClient = async (notes) => {
+      receivedNotes = notes;
+      return {
+        summary: 'Summary line 1\nSummary line 2',
+        tags: ['Databases', 'Testing', 'Algorithms']
+      };
+    };
+    const result = await sessionService.summariseNotes(submittedNotes, { client: fakeClient });
+    expect(result.source).to.equal('ai');
+    expect(receivedNotes).to.equal(submittedNotes);
     expect(result.summary.split('\n').length).to.equal(2);
     expect(result.tags).to.deep.equal(['Databases', 'Testing', 'Algorithms']);
   });
 
-  it('AC-7: A student who enters what they want to study to find a group sees matching suggestions', async () => {
-    const res = await agent.get('/api/groups');
+  it('AC-2: MCP join_group uses the authenticated session identity and records membership', async () => {
+    const result = await callProjectTool('join_group', {
+      userId: adminId,
+      groupId: mathGroupId
+    }, { resolveUser: async () => userId });
+    expect(result.isError).to.not.be.true;
+    expect(result.content[0].text).to.equal('You have successfully joined the group');
+    const membership = await getDb().get(
+      'SELECT user_id FROM memberships WHERE user_id = ? AND group_id = ?',
+      [userId, mathGroupId]
+    );
+    expect(membership.user_id).to.equal(userId);
+  });
+
+  it('AC-7: Interest suggestions match group topics and exclude ineligible memberships', async () => {
+    await agent.delete('/api/memberships').send({ groupId: mathGroupId });
+    const res = await agent.get('/api/groups/suggestions?interest=Math');
     expect(res.status).to.equal(200);
-    expect(res.body.some(g => g.course_name === 'Math 101')).to.be.true;
+    expect(res.body.map(group => group.id)).to.include(mathGroupId);
+    expect(res.body.map(group => group.id)).to.not.include(physicsGroupId);
+    await agent.post('/api/memberships').send({ groupId: mathGroupId });
+    const updatedSuggestions = await agent.get('/api/groups/suggestions?interest=Math');
+    expect(updatedSuggestions.body.map(group => group.id)).to.not.include(mathGroupId);
   });
 
   it('AC-8: A user who calls my_groups sees a list of all groups in which they participate', async () => {
@@ -113,7 +152,13 @@ describe('Feature acceptance tests', () => {
     expect(myGroups.length).to.be.greaterThan(0);
   });
 
-  it('AC-21: An admin user can successfully create a new study group', async () => {
+  it('AC-21: An admin can create a study group through the administrator group-management API', async () => {
+    const studentRes = await agent.post('/api/groups').send({
+      name: 'Student Group AC21',
+      courseName: 'Advanced CS'
+    });
+    expect(studentRes.status).to.equal(403);
+
     const res = await adminAgent.post('/api/groups').send({
       name: 'Admin Group AC21',
       courseName: 'Advanced CS'
@@ -123,7 +168,7 @@ describe('Feature acceptance tests', () => {
   });
 
   it('AC-22: only a group owner or operator can schedule sessions for that group', async () => {
-    const ownGroupSession = await agent.post('/api/sessions').send({
+    const ownGroupSession = await adminAgent.post('/api/sessions').send({
       groupId: mathGroupId,
       title: 'Owner session AC22',
       startTime: '2030-04-01 10:00:00',
@@ -146,12 +191,10 @@ describe('Feature acceptance tests', () => {
     expect(otherGroupSession.status).to.equal(403);
   });
 
-  it('AC-24: If a user attempts to perform a role-restricted action via direct API request, server responds with 403 Forbidden', async () => {
-    const studentRes = await agent.post('/api/groups').send({
-      name: 'Hacker Group',
-      courseName: 'Security'
-    });
-    expect(studentRes.status).to.equal(403);
+  it('AC-24: A direct request for the protected user list is forbidden to students', async () => {
+    const userList = await agent.get('/api/users');
+    expect(userList.status).to.equal(403);
+    expect(userList.body.error).to.include('Only admins');
   });
 
   it('AC-15 & AC-23: signed-in users can view groups, join, leave, and toggle session attendance', async () => {

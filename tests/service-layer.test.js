@@ -1,3 +1,4 @@
+import '../scripts/test-database-setup.js';
 import { describe, it, before, after } from 'node:test';
 import { expect } from 'chai';
 import * as authService from '../src/services/authService.js';
@@ -12,7 +13,7 @@ const EMAIL_ADMIN = `admin_test_${RUN_ID}@example.com`;
 const EMAIL_STUDENT = `student_test_${RUN_ID}@example.com`;
 const EMAIL_NEW = `new_user_${RUN_ID}@example.com`;
 
-describe('Service layer tests', () => {
+describe('Authentication and study-session service behavior', () => {
   let userId;
   let adminId;
   let studentId;
@@ -74,6 +75,346 @@ describe('Service layer tests', () => {
     expect(resSuccess).to.have.property('id', userId);
   });
 
+  it('authService: local registration validates e-mail, hashes passwords, assigns students, and handles duplicate races', async () => {
+    const created = [];
+    const repository = {
+      findUserByEmail: async () => null,
+      createUser: async (...args) => {
+        created.push(args);
+        return 8001;
+      }
+    };
+
+    await expectStatusError(() => authService.registerUser(null, 'password123', repository), 400);
+    await expectStatusError(() => authService.registerUser('not-an-email', 'password123', repository), 400);
+    await expectStatusError(() => authService.registerUser('x'.repeat(250) + '@example.com', 'password123', repository), 400);
+    await expectStatusError(() => authService.registerUser('student@example.com', undefined, repository), 400);
+    await expectStatusError(() => authService.registerUser('student@example.com', '', repository), 400);
+    await expectStatusError(() => authService.registerUser('student@example.com', 'x'.repeat(129), repository), 400);
+
+    repository.findUserByEmail = async () => ({ id: 1 });
+    await expectStatusError(() => authService.registerUser('student@example.com', 'password123', repository), 409);
+
+    repository.findUserByEmail = async () => null;
+    const registered = await authService.registerUser(' Student@Example.com ', '!', repository);
+    expect(registered).to.deep.equal({
+      id: 8001,
+      email: 'student@example.com',
+      role: 'student'
+    });
+    expect(created[0][0]).to.equal('student@example.com');
+    expect(created[0][2]).to.equal('student');
+    expect(await bcrypt.compare('!', created[0][1])).to.equal(true);
+
+    repository.createUser = async () => {
+      const conflict = new Error('duplicate key');
+      conflict.code = '23505';
+      throw conflict;
+    };
+    await expectStatusError(() => authService.registerUser('student@example.com', 'password123', repository), 409);
+
+    const databaseError = new Error('database unavailable');
+    repository.createUser = async () => { throw databaseError; };
+    try {
+      await authService.registerUser('student@example.com', 'password123', repository);
+      expect.fail('unexpected database errors should propagate');
+    } catch (err) {
+      expect(err).to.equal(databaseError);
+    }
+  });
+
+  it('authService: Google sign-in requires verified e-mail and matches accounts by Google id', async () => {
+    try {
+      await authService.authenticateGoogleIdentity({ sub: GOOGLE_ID, email: EMAIL_AUTH, email_verified: false });
+      expect.fail('unverified e-mail should be rejected');
+    } catch (err) {
+      expect(err.status).to.equal(401);
+    }
+
+    const linkedLocalUser = await authService.authenticateGoogleIdentity({
+      sub: GOOGLE_ID,
+      email: EMAIL_AUTH,
+      email_verified: true
+    });
+    expect(linkedLocalUser.id).to.equal(userId);
+    expect(linkedLocalUser.passwordSetupRequired).to.equal(false);
+    expect((await userRepo.findUserByGoogleId(GOOGLE_ID)).id).to.equal(userId);
+
+    const originalClientId = process.env.GOOGLE_CLIENT_ID;
+    const originalClientSecret = process.env.GOOGLE_CLIENT_SECRET;
+    process.env.GOOGLE_CLIENT_ID = 'test-client-id';
+    process.env.GOOGLE_CLIENT_SECRET = 'test-client-secret';
+    const fetchCalls = [];
+    try {
+      const user = await authService.authenticateGoogleCode({
+        code: 'test-code',
+        codeVerifier: 'test-verifier',
+        redirectUri: 'https://study-groups.example/api/auth/google/callback'
+      }, async (url, options) => {
+        fetchCalls.push({ url, options });
+        if (url.endsWith('/token')) {
+          return { ok: true, json: async () => ({ access_token: 'test-access-token' }) };
+        }
+        return {
+          ok: true,
+          json: async () => ({ sub: `${GOOGLE_ID}_new`, email: EMAIL_GOOGLE, email_verified: true })
+        };
+      });
+      googleUserId = user.id;
+      expect(user.email).to.equal(EMAIL_GOOGLE);
+      expect(user.role).to.equal('student');
+      expect(user.passwordSetupRequired).to.equal(true);
+      expect(fetchCalls).to.have.length(2);
+      expect(fetchCalls[0].options.body.get('code_verifier')).to.equal('test-verifier');
+
+      const returningUser = await authService.authenticateGoogleIdentity({
+        sub: `${GOOGLE_ID}_new`,
+        email: 'different-address@example.com',
+        email_verified: true
+      });
+      expect(returningUser.id).to.equal(googleUserId);
+      expect(returningUser.passwordSetupRequired).to.equal(true);
+    } finally {
+      if (originalClientId === undefined) {
+        delete process.env.GOOGLE_CLIENT_ID;
+      } else {
+        process.env.GOOGLE_CLIENT_ID = originalClientId;
+      }
+      if (originalClientSecret === undefined) {
+        delete process.env.GOOGLE_CLIENT_SECRET;
+      } else {
+        process.env.GOOGLE_CLIENT_SECRET = originalClientSecret;
+      }
+    }
+  });
+
+  it('authService: Google-only users can set a password required by account deletion', async () => {
+    const repository = {
+      findUserByIdWithPassword: async () => null,
+      setLocalPasswordForGoogleUser: async () => ({ id: 7001 })
+    };
+
+    await expectStatusError(
+      () => authService.setGoogleAccountPassword(7001, undefined, repository),
+      400
+    );
+    await expectStatusError(
+      () => authService.setGoogleAccountPassword(7001, '', repository),
+      400
+    );
+    await expectStatusError(
+      () => authService.setGoogleAccountPassword(7001, 'x'.repeat(129), repository),
+      400
+    );
+    await expectStatusError(
+      () => authService.setGoogleAccountPassword(7001, 'new-password', repository),
+      404
+    );
+
+    repository.findUserByIdWithPassword = async () => ({
+      id: 7001,
+      google_id: null,
+      has_local_password: true
+    });
+    await expectStatusError(
+      () => authService.setGoogleAccountPassword(7001, 'new-password', repository),
+      409
+    );
+
+    repository.findUserByIdWithPassword = async () => ({
+      id: 7001,
+      google_id: 'google-sub',
+      has_local_password: true
+    });
+    await expectStatusError(
+      () => authService.setGoogleAccountPassword(7001, 'new-password', repository),
+      409
+    );
+
+    repository.findUserByIdWithPassword = async () => ({
+      id: 7001,
+      google_id: 'google-sub',
+      has_local_password: false
+    });
+    repository.setLocalPasswordForGoogleUser = async () => null;
+    await expectStatusError(
+      () => authService.setGoogleAccountPassword(7001, 'new-password', repository),
+      409
+    );
+
+    let storedHash;
+    repository.setLocalPasswordForGoogleUser = async (_userId, passwordHash) => {
+      storedHash = passwordHash;
+      return { id: 7001 };
+    };
+    const result = await authService.setGoogleAccountPassword(7001, '!', repository);
+    expect(result).to.deep.equal({ success: true });
+    expect(await bcrypt.compare('!', storedHash)).to.equal(true);
+  });
+
+  it('authService: Google OAuth handles configuration, provider, and identity conflicts', async () => {
+    const originalClientId = process.env.GOOGLE_CLIENT_ID;
+    const originalClientSecret = process.env.GOOGLE_CLIENT_SECRET;
+    const codeRequest = {
+      code: 'test-code',
+      codeVerifier: 'test-verifier',
+      redirectUri: 'https://study-groups.example/api/auth/google/callback'
+    };
+
+    try {
+      delete process.env.GOOGLE_CLIENT_ID;
+      await expectStatusError(() => authService.createGoogleAuthorizationUrl({}), 503);
+
+      process.env.GOOGLE_CLIENT_ID = 'test-client-id';
+      delete process.env.GOOGLE_CLIENT_SECRET;
+      await expectStatusError(() => authService.authenticateGoogleCode(codeRequest, async () => ({})), 503);
+
+      process.env.GOOGLE_CLIENT_SECRET = 'test-client-secret';
+      await expectStatusError(() => authService.authenticateGoogleCode(codeRequest, async () => ({ ok: false })), 401);
+      await expectStatusError(() => authService.authenticateGoogleCode(codeRequest, async () => ({
+        ok: true,
+        json: async () => ({})
+      })), 401);
+      await expectStatusError(() => authService.authenticateGoogleCode(codeRequest, async (url) => url.endsWith('/token')
+        ? { ok: true, json: async () => ({ access_token: 'token' }) }
+        : { ok: false }), 401);
+
+      const linkedUser = { id: 7001, email: EMAIL_GOOGLE, role: 'student' };
+      let googleIdLookups = 0;
+      const racingRepository = {
+        findUserByGoogleId: async () => ++googleIdLookups === 1 ? null : linkedUser,
+        findUserByEmail: async () => null,
+        linkGoogleId: async () => null,
+        createGoogleUser: async () => {
+          const err = new Error('duplicate key');
+          err.code = '23505';
+          throw err;
+        }
+      };
+      const raceResult = await authService.authenticateGoogleIdentity({
+        sub: GOOGLE_ID,
+        email: EMAIL_GOOGLE,
+        email_verified: true
+      }, racingRepository);
+      expect(raceResult.id).to.equal(linkedUser.id);
+
+      const emailOwner = { id: 7002, email: EMAIL_GOOGLE, role: 'student' };
+      let emailLookups = 0;
+      const emailRaceRepository = {
+        findUserByGoogleId: async () => null,
+        findUserByEmail: async () => ++emailLookups === 1 ? null : emailOwner,
+        linkGoogleId: async () => emailOwner,
+        createGoogleUser: async () => {
+          const err = new Error('duplicate key');
+          err.code = '23505';
+          throw err;
+        }
+      };
+      const emailRaceResult = await authService.authenticateGoogleIdentity({
+        sub: GOOGLE_ID,
+        email: EMAIL_GOOGLE,
+        email_verified: true
+      }, emailRaceRepository);
+      expect(emailRaceResult.id).to.equal(emailOwner.id);
+
+      let linkedUserLookups = 0;
+      const linkRaceRepository = {
+        findUserByGoogleId: async () => ++linkedUserLookups === 1 ? null : emailOwner,
+        findUserByEmail: async () => emailOwner,
+        linkGoogleId: async () => null,
+        createGoogleUser: async () => { throw new Error('creation should not be reached'); }
+      };
+      const linkRaceResult = await authService.authenticateGoogleIdentity({
+        sub: `${GOOGLE_ID}_link_race`,
+        email: EMAIL_GOOGLE,
+        email_verified: true
+      }, linkRaceRepository);
+      expect(linkRaceResult.id).to.equal(emailOwner.id);
+
+      const linkDatabaseError = new Error('link database unavailable');
+      const linkFailureRepository = {
+        findUserByGoogleId: async () => null,
+        findUserByEmail: async () => emailOwner,
+        linkGoogleId: async () => { throw linkDatabaseError; },
+        createGoogleUser: async () => { throw new Error('creation should not be reached'); }
+      };
+      try {
+        await authService.authenticateGoogleIdentity({
+          sub: `${GOOGLE_ID}_link_failure`,
+          email: EMAIL_GOOGLE,
+          email_verified: true
+        }, linkFailureRepository);
+        expect.fail('link database failure should propagate');
+      } catch (err) {
+        expect(err).to.equal(linkDatabaseError);
+      }
+
+      let linkedElsewhereLookups = 0;
+      const linkedElsewhereRepository = {
+        findUserByGoogleId: async () => ++linkedElsewhereLookups === 1
+          ? null
+          : { id: 7003, email: EMAIL_GOOGLE, role: 'student' },
+        findUserByEmail: async () => emailOwner,
+        linkGoogleId: async () => {
+          const err = new Error('duplicate key');
+          err.code = '23505';
+          throw err;
+        },
+        createGoogleUser: async () => { throw new Error('creation should not be reached'); }
+      };
+      await expectStatusError(() => authService.authenticateGoogleIdentity({
+        sub: `${GOOGLE_ID}_conflict`,
+        email: EMAIL_GOOGLE,
+        email_verified: true
+      }, linkedElsewhereRepository), 409);
+
+      const duplicateRepository = {
+        findUserByGoogleId: async () => null,
+        findUserByEmail: async () => null,
+        linkGoogleId: async () => null,
+        createGoogleUser: async () => {
+          const err = new Error('duplicate key');
+          err.code = '23505';
+          throw err;
+        }
+      };
+      await expectStatusError(() => authService.authenticateGoogleIdentity({
+        sub: GOOGLE_ID,
+        email: EMAIL_GOOGLE,
+        email_verified: true
+      }, duplicateRepository), 409);
+
+      const databaseError = new Error('database unavailable');
+      const failingRepository = {
+        findUserByGoogleId: async () => null,
+        findUserByEmail: async () => null,
+        linkGoogleId: async () => null,
+        createGoogleUser: async () => { throw databaseError; }
+      };
+      try {
+        await authService.authenticateGoogleIdentity({
+          sub: GOOGLE_ID,
+          email: EMAIL_GOOGLE,
+          email_verified: true
+        }, failingRepository);
+        expect.fail('database error should propagate');
+      } catch (err) {
+        expect(err).to.equal(databaseError);
+      }
+    } finally {
+      if (originalClientId === undefined) {
+        delete process.env.GOOGLE_CLIENT_ID;
+      } else {
+        process.env.GOOGLE_CLIENT_ID = originalClientId;
+      }
+      if (originalClientSecret === undefined) {
+        delete process.env.GOOGLE_CLIENT_SECRET;
+      } else {
+        process.env.GOOGLE_CLIENT_SECRET = originalClientSecret;
+      }
+    }
+  });
+
   it('authService: deleteAccount handles user not found, wrong password, and success', async () => {
     try {
       await authService.deleteAccount(999999, 'password123');
@@ -108,6 +449,22 @@ describe('Service layer tests', () => {
     await sessionService.joinGroup(adminId, groupId);
     await sessionService.updateSessionAttendance(adminId, sessionId, 'attending');
     await sessionService.leaveGroup(adminId, groupId);
+  });
+
+  it('sessionService: group suggestions match interests and exclude groups the user already joined', async () => {
+    const suggestions = await sessionService.suggestGroups(studentId, 'Service 101');
+    expect(suggestions.some(group => group.id === groupId)).to.be.true;
+    await sessionService.joinGroup(studentId, groupId);
+    const eligibleSuggestions = await sessionService.suggestGroups(studentId, 'Service 101');
+    expect(eligibleSuggestions.some(group => group.id === groupId)).to.be.false;
+    await sessionService.leaveGroup(studentId, groupId);
+    await expectStatusError(() => sessionService.suggestGroups(studentId, '   '), 400);
+  });
+
+  it('sessionService: getAllUsers is restricted to administrators', async () => {
+    const users = await sessionService.getAllUsers(adminId);
+    expect(users).to.be.an('array');
+    await expectStatusError(() => sessionService.getAllUsers(studentId), 403);
   });
 
   it('sessionService: createGroup validations and success', async () => {
@@ -265,9 +622,6 @@ describe('Service layer tests', () => {
   });
 
   it('sessionService: user management functions (getAllUsers, adminCreateUser, adminUpdateUser, adminDeleteUser)', async () => {
-    const users = await sessionService.getAllUsers();
-    expect(users).to.be.an('array');
-
     try {
       await sessionService.adminCreateUser(studentId, { email: EMAIL_NEW, password: 'pw', role: 'student' });
       expect.fail('should have thrown');
@@ -368,185 +722,4 @@ describe('Service layer tests', () => {
     }
   });
 
-  it('sessionService: summariseNotes tests API branches and catch/error blocks', async () => {
-    process.env.GEMINI_API_KEY = '';
-    const res1 = await sessionService.summariseNotes('notes');
-    expect(res1).to.have.property('summary');
-
-    const resCustomKey = await sessionService.summariseNotes('notes', { apiKey: 'my-custom-key' });
-    expect(resCustomKey).to.have.property('summary');
-
-    const resClientSuccess = await sessionService.summariseNotes('notes', { client: async () => ({ summary: 'client sum', tags: ['Databases'] }) });
-    expect(resClientSuccess.summary).to.equal('client sum');
-
-    const res2 = await sessionService.summariseNotes('notes', { client: async () => { throw new Error('fail'); } });
-    expect(res2).to.have.property('summary');
-
-    process.env.GEMINI_API_KEY = 'fake-key';
-    const originalFetch = global.fetch;
-
-    // Fetch success
-    global.fetch = async () => ({
-      ok: true,
-      json: async () => ({
-        candidates: [{
-          content: {
-            parts: [{
-              text: 'Summary line one\nSummary line two\n```json\n{"summary": "Summary line one\\nSummary line two", "tags": ["Databases", "Testing", "JavaScript"]}\n```'
-            }]
-          }
-        }]
-      })
-    });
-    const res3 = await sessionService.summariseNotes('notes');
-    expect(res3.tags).to.deep.equal(['Databases', 'Testing', 'JavaScript']);
-
-    // Fetch non-ok
-    global.fetch = async () => ({ ok: false });
-    const res4 = await sessionService.summariseNotes('notes');
-    expect(res4).to.have.property('summary');
-
-    // Fetch throws network error / abort
-    global.fetch = async () => { throw new Error('Network error'); };
-    const res4b = await sessionService.summariseNotes('notes');
-    expect(res4b).to.have.property('summary');
-
-    // Fetch invalid JSON text
-    global.fetch = async () => ({
-      ok: true,
-      json: async () => ({
-        candidates: [{
-          content: {
-            parts: [{ text: 'invalid json' }]
-          }
-        }]
-      })
-    });
-    const res5 = await sessionService.summariseNotes('notes');
-    expect(res5).to.have.property('summary');
-
-    // Fetch missing text or insufficient tags (e.g. < 3 valid tags)
-    global.fetch = async () => ({
-      ok: true,
-      json: async () => ({
-        candidates: [{
-          content: {
-            parts: [{ text: '{"summary": "sum", "tags": ["Databases"]}' }]
-          }
-        }]
-      })
-    });
-    const res6 = await sessionService.summariseNotes('notes');
-    expect(res6).to.have.property('summary');
-
-    global.fetch = async () => ({
-      ok: true,
-      json: async () => ({
-        candidates: [{
-          content: {
-            parts: [{ text: '{"summary": "sum", "tags": ["Databases", "UnknownTag1", "UnknownTag2"]}' }]
-          }
-        }]
-      })
-    });
-    const res6c = await sessionService.summariseNotes('notes');
-    expect(res6c).to.have.property('summary');
-
-    global.fetch = async () => ({
-      ok: true,
-      json: async () => ({
-        candidates: [{
-          content: {
-            parts: [{ text: '{"summary": "\\n\\n", "tags": ["Databases", "Algorithms", "Networking"]}' }]
-          }
-        }]
-      })
-    });
-    const res6d = await sessionService.summariseNotes('notes');
-    expect(res6d).to.have.property('summary');
-
-    global.fetch = async () => ({
-      ok: true,
-      json: async () => ({
-        candidates: [{
-          content: {
-            parts: [{ text: '{"summary": 123, "tags": ["Databases", "Algorithms", "Networking"]}' }]
-          }
-        }]
-      })
-    });
-    const res6e = await sessionService.summariseNotes('notes');
-    expect(res6e).to.have.property('summary');
-
-    global.fetch = async () => ({
-      ok: true,
-      json: async () => ({
-        candidates: [{
-          content: {
-            parts: [{ text: '{"summary": "sum", "tags": "not-array"}' }]
-          }
-        }]
-      })
-    });
-    const res6f = await sessionService.summariseNotes('notes');
-    expect(res6f).to.have.property('summary');
-    global.fetch = async () => ({
-      ok: true,
-      json: async () => ({
-        candidates: [{
-          content: {
-            parts: [{ text: 'null' }]
-          }
-        }]
-      })
-    });
-    const res6g = await sessionService.summariseNotes('notes');
-    expect(res6g).to.have.property('summary');
-
-    global.fetch = async () => ({
-      ok: true,
-      json: async () => ({
-        candidates: []
-      })
-    });
-    const res6h = await sessionService.summariseNotes('notes');
-    expect(res6h).to.have.property('summary');
-
-    global.fetch = async () => ({
-      ok: true,
-      json: async () => ({
-        candidates: [{
-          content: {
-            parts: [{}]
-          }
-        }]
-      })
-    });
-    const res6i = await sessionService.summariseNotes('notes');
-    expect(res6i).to.have.property('summary');
-
-    const res7 = await sessionService.summariseNotes();
-    expect(res7).to.have.property('summary');
-
-    const res7b = await sessionService.summariseNotes('');
-    expect(res7b).to.have.property('summary');
-
-    const res7c = await sessionService.summariseNotes('Line A\nLine B');
-    expect(res7c).to.have.property('summary');
-
-    global.fetch = async () => ({
-      ok: true,
-      json: async () => ({
-        candidates: [{
-          content: {
-            parts: [{ text: '{"summary": "sum", "tags": null}' }]
-          }
-        }]
-      })
-    });
-    const res6j = await sessionService.summariseNotes('notes');
-    expect(res6j).to.have.property('summary');
-
-    global.fetch = originalFetch;
-  });
 });

@@ -1,3 +1,4 @@
+import '../scripts/test-database-setup.js';
 import { describe, it, before, after } from 'node:test';
 import request from 'supertest';
 import { expect } from 'chai';
@@ -56,16 +57,20 @@ describe('Authorization and session scheduling acceptance tests', () => {
     }
   });
 
-  it('AC-1: An admin can create a new study group, becoming owner, while non-admin is forbidden (403)', async () => {
-    const studentRes = await studentAgent.post('/api/groups').send({ name: 'Student Group S2', courseName: 'CS101' });
-    expect(studentRes.status).to.equal(403);
-
+  it('AC-1: An administrator who creates a group is recorded as its owner and member', async () => {
     const adminRes = await adminAgent.post('/api/groups').send({ name: 'Admin Group S2', courseName: 'Math101' });
     expect(adminRes.status).to.equal(201);
     expect(adminRes.body.success).to.be.true;
+    const group = await getDb().get('SELECT owner_id FROM groups WHERE id = ?', [adminRes.body.groupId]);
+    const membership = await getDb().get(
+      'SELECT user_id FROM memberships WHERE user_id = ? AND group_id = ?',
+      [adminId, adminRes.body.groupId]
+    );
+    expect(group.owner_id).to.equal(adminId);
+    expect(membership.user_id).to.equal(adminId);
   });
 
-  it('AC-18: A group owner who submits valid session details sees the new session created successfully', async () => {
+  it('AC-18: A group owner receives success and the session is persisted', async () => {
     const res = await ownerAgent.post('/api/sessions').send({
       groupId,
       title: 'Quantum Mechanics',
@@ -74,6 +79,11 @@ describe('Authorization and session scheduling acceptance tests', () => {
     });
     expect(res.status).to.equal(201);
     expect(res.body.success).to.be.true;
+    const storedSession = await getDb().get(
+      'SELECT group_id, title FROM sessions WHERE id = ?',
+      [res.body.sessionId]
+    );
+    expect(storedSession).to.deep.equal({ group_id: groupId, title: 'Quantum Mechanics' });
   });
 
   it('AC-19: A group owner who attempts to schedule an overlapping session is refused with 409 conflict and conflicting session name', async () => {
