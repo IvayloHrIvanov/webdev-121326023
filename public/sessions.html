@@ -225,6 +225,32 @@
                 }
             }
 
+            function renderSessions(sessions) {
+                const sTbody = document.querySelector('#sessions-table tbody');
+                sTbody.innerHTML = '';
+                if (sessions.length === 0) {
+                    sTbody.innerHTML = '<tr><td colspan="4">No upcoming sessions.</td></tr>';
+                    return;
+                }
+
+                sessions.forEach(s => {
+                    const tr = document.createElement('tr');
+                    const isAttending = s.attendance_status === 'attending';
+                    let actionHtml = isAttending
+                        ? `<button class="btn-not-attend" onclick="toggleSessionAttendance(${s.id}, 'not_attending', this)">Will Not Attend</button>`
+                        : `<button class="btn-attend" onclick="toggleSessionAttendance(${s.id}, 'attending', this)">Attend</button>`;
+
+                    const groupOps = groupOperatorsMap[s.group_id] || [s.owner_id];
+                    const canDeleteSession = currentUser.role === 'admin' || groupOps.includes(currentUser.id);
+                    if (canDeleteSession) {
+                        actionHtml += `<button class="btn-not-attend" onclick="deleteSession(${s.id})">Delete Session</button>`;
+                    }
+
+                    tr.innerHTML = `<td>${s.title}</td><td>${s.course_name}</td><td>${format24h(s.start_time)}</td><td>${actionHtml}</td>`;
+                    sTbody.appendChild(tr);
+                });
+            }
+
             async function loadData() {
                 const sessionRows = document.querySelector('#sessions-table tbody');
                 const groupRows = document.querySelector('#groups-table tbody');
@@ -250,28 +276,7 @@
                     const sRes = await fetch('/api/sessions');
                     if (!sRes.ok) throw new Error('Could not load sessions');
                     const sessions = await sRes.json();
-                    const sTbody = sessionRows;
-                    sTbody.innerHTML = '';
-                    if (sessions.length === 0) {
-                        sTbody.innerHTML = '<tr><td colspan="4">No upcoming sessions.</td></tr>';
-                    } else {
-                        sessions.forEach(s => {
-                            const tr = document.createElement('tr');
-                            const isAttending = s.attendance_status === 'attending';
-                            let actionHtml = isAttending
-                                ? `<button class="btn-not-attend" onclick="toggleSessionAttendance(${s.id}, 'not_attending')">Will Not Attend</button>`
-                                : `<button class="btn-attend" onclick="toggleSessionAttendance(${s.id}, 'attending')">Attend</button>`;
-
-                            const groupOps = groupOperatorsMap[s.group_id] || [s.owner_id];
-                            const canDeleteSession = currentUser.role === 'admin' || groupOps.includes(currentUser.id);
-                            if (canDeleteSession) {
-                                actionHtml += `<button class="btn-not-attend" onclick="deleteSession(${s.id})">Delete Session</button>`;
-                            }
-
-                            tr.innerHTML = `<td>${s.title}</td><td>${s.course_name}</td><td>${format24h(s.start_time)}</td><td>${actionHtml}</td>`;
-                            sTbody.appendChild(tr);
-                        });
-                    }
+                    renderSessions(sessions);
 
                     const gTbody = groupRows;
                     gTbody.innerHTML = '';
@@ -288,8 +293,8 @@
                     groups.forEach(g => {
                     const tr = document.createElement('tr');
                     let memberAction = g.is_member
-                        ? `<button class="btn-not-attend" onclick="toggleMembership(${g.id}, true)">Leave</button>`
-                        : `<button class="btn-attend" onclick="toggleMembership(${g.id}, false)">Join</button>`;
+                        ? `<button class="btn-not-attend" onclick="toggleMembership(${g.id}, true, this)">Leave</button>`
+                        : `<button class="btn-attend" onclick="toggleMembership(${g.id}, false, this)">Join</button>`;
 
                     if (currentUser.role === 'admin') {
                         memberAction += `<button class="btn-not-attend" onclick="deleteGroup(${g.id})">Delete Group</button>`;
@@ -570,31 +575,67 @@
                 }
             }
 
-            async function toggleMembership(groupId, isMember) {
+            async function toggleMembership(groupId, isMember, button) {
                 const method = isMember ? 'DELETE' : 'POST';
-                const res = await fetch('/api/memberships', {
-                    method: method,
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ groupId })
-                });
-                if (res.ok) {
-                    loadData();
-                } else {
-                    alert('Failed to update membership');
+                button.disabled = true;
+                let membershipUpdated = false;
+                try {
+                    const res = await fetch('/api/memberships', {
+                        method: method,
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ groupId })
+                    });
+                    if (!res.ok) {
+                        alert('Failed to update membership');
+                        return;
+                    }
+
+                    membershipUpdated = true;
+                    const nowMember = !isMember;
+                    button.textContent = nowMember ? 'Leave' : 'Join';
+                    button.className = nowMember ? 'btn-not-attend' : 'btn-attend';
+                    button.setAttribute('onclick', `toggleMembership(${groupId}, ${nowMember}, this)`);
+
+                    const sessionsRes = await fetch('/api/sessions');
+                    if (!sessionsRes.ok) throw new Error('Could not refresh sessions');
+                    renderSessions(await sessionsRes.json());
+                } catch {
+                    if (membershipUpdated) {
+                        document.getElementById('dashboard-error').innerText =
+                            'Membership was updated, but sessions could not be refreshed. Please try again.';
+                    } else {
+                        alert('Failed to update membership. Please try again.');
+                    }
+                } finally {
+                    button.disabled = false;
                 }
             }
 
-            async function toggleSessionAttendance(sessionId, status) {
-                const res = await fetch(`/api/sessions/${sessionId}/attendance`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ status })
-                });
-                if (res.ok) {
-                    loadData();
-                } else {
-                    const data = await res.json();
-                    alert('Failed to update session attendance: ' + (data.error || 'Unknown error'));
+            async function toggleSessionAttendance(sessionId, status, button) {
+                button.disabled = true;
+                try {
+                    const res = await fetch(`/api/sessions/${sessionId}/attendance`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ status })
+                    });
+                    if (!res.ok) {
+                        const data = await res.json();
+                        alert('Failed to update session attendance: ' + (data.error || 'Unknown error'));
+                        return;
+                    }
+
+                    const nowAttending = status !== 'attending';
+                    button.textContent = nowAttending ? 'Will Not Attend' : 'Attend';
+                    button.className = nowAttending ? 'btn-not-attend' : 'btn-attend';
+                    button.setAttribute(
+                        'onclick',
+                        `toggleSessionAttendance(${sessionId}, '${nowAttending ? 'not_attending' : 'attending'}', this)`
+                    );
+                } catch {
+                    alert('Failed to update session attendance. Please try again.');
+                } finally {
+                    button.disabled = false;
                 }
             }
 
