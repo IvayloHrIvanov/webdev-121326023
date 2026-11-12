@@ -78,6 +78,7 @@ describe('Login and registration field validation', () => {
     const page = createLoginPage();
     const email = page.getElement('register-email');
     const password = page.getElement('register-password');
+    const confirmation = page.getElement('register-confirm-password');
     const submit = page.getElement('register-form').listeners.submit;
 
     await submit({ preventDefault() {}, currentTarget: page.getElement('register-form') });
@@ -92,12 +93,26 @@ describe('Login and registration field validation', () => {
     expect(page.getFetchCalled()).to.equal(false);
 
     password.value = 'x'.repeat(129);
+    confirmation.value = password.value;
     await submit({ preventDefault() {}, currentTarget: page.getElement('register-form') });
     expect(page.getElement('register-password-error').innerText)
       .to.equal('Password must be no more than 128 characters.');
     expect(page.getFetchCalled()).to.equal(false);
 
     password.value = '!';
+    confirmation.value = '';
+    await submit({ preventDefault() {}, currentTarget: page.getElement('register-form') });
+    expect(page.getElement('register-confirm-password-error').innerText)
+      .to.equal('Please confirm your password.');
+    expect(page.getFetchCalled()).to.equal(false);
+
+    confirmation.value = 'different';
+    await submit({ preventDefault() {}, currentTarget: page.getElement('register-form') });
+    expect(page.getElement('register-confirm-password-error').innerText)
+      .to.equal('Passwords do not match.');
+    expect(page.getFetchCalled()).to.equal(false);
+
+    confirmation.value = password.value;
     await submit({ preventDefault() {}, currentTarget: page.getElement('register-form') });
     expect(page.getFetchCalled()).to.equal(true);
   });

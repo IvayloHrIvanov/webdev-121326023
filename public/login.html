@@ -40,8 +40,11 @@
                 <input type="email" id="register-email" autocomplete="email" maxlength="254" aria-describedby="register-email-error" required>
                 <div id="register-email-error" class="error field-error" role="alert" aria-live="polite"></div>
                 <label for="register-password">Password:</label>
-                <input type="password" id="register-password" autocomplete="new-password" minlength="1" maxlength="128" aria-describedby="register-password-error" style="margin-bottom: 20px;" required>
+                <input type="password" id="register-password" autocomplete="new-password" minlength="1" maxlength="128" aria-describedby="register-password-error" required>
                 <div id="register-password-error" class="error field-error" role="alert" aria-live="polite"></div>
+                <label for="register-confirm-password">Confirm password:</label>
+                <input type="password" id="register-confirm-password" class="confirm-password" autocomplete="new-password" minlength="1" maxlength="128" aria-describedby="register-confirm-password-error" style="margin-bottom: 20px;" required>
+                <div id="register-confirm-password-error" class="error field-error" role="alert" aria-live="polite"></div>
                 <button type="submit">Create Student Account</button>
             </form>
             <button id="show-login" class="btn-success" type="button">Back to sign in</button>
@@ -103,12 +106,15 @@
         const loginPasswordError = document.getElementById('password-error');
         const registerEmail = document.getElementById('register-email');
         const registerPassword = document.getElementById('register-password');
+        const registerConfirmPassword = document.getElementById('register-confirm-password');
         const registerEmailError = document.getElementById('register-email-error');
         const registerPasswordError = document.getElementById('register-password-error');
+        const registerConfirmPasswordError = document.getElementById('register-confirm-password-error');
         clearOnInput(loginEmail, loginEmailError);
         clearOnInput(loginPassword, loginPasswordError);
         clearOnInput(registerEmail, registerEmailError);
         clearOnInput(registerPassword, registerPasswordError);
+        clearOnInput(registerConfirmPassword, registerConfirmPasswordError);
 
         document.getElementById('show-register').addEventListener('click', () => {
             errorElement.innerText = '';
@@ -116,6 +122,7 @@
             clearFieldError(loginPassword, loginPasswordError);
             clearFieldError(registerEmail, registerEmailError);
             clearFieldError(registerPassword, registerPasswordError);
+            clearFieldError(registerConfirmPassword, registerConfirmPasswordError);
             heading.innerText = 'Register';
             loginView.hidden = true;
             registerView.hidden = false;
@@ -125,6 +132,7 @@
             errorElement.innerText = '';
             clearFieldError(registerEmail, registerEmailError);
             clearFieldError(registerPassword, registerPasswordError);
+            clearFieldError(registerConfirmPassword, registerConfirmPasswordError);
             heading.innerText = 'Sign In';
             registerView.hidden = true;
             loginView.hidden = false;
@@ -166,6 +174,7 @@
             errorElement.innerText = '';
             const email = validateEmail(registerEmail, registerEmailError);
             const password = registerPassword.value;
+            const confirmation = registerConfirmPassword.value;
             if (!password) {
                 setFieldError(registerPassword, registerPasswordError, 'Please enter a password.');
             } else if (password.length > 128) {
@@ -173,8 +182,15 @@
             } else {
                 clearFieldError(registerPassword, registerPasswordError);
             }
-            if (!email || !password || password.length > 128) {
-                (email ? registerPassword : registerEmail).focus();
+            if (!confirmation) {
+                setFieldError(registerConfirmPassword, registerConfirmPasswordError, 'Please confirm your password.');
+            } else if (password !== confirmation) {
+                setFieldError(registerConfirmPassword, registerConfirmPasswordError, 'Passwords do not match.');
+            } else {
+                clearFieldError(registerConfirmPassword, registerConfirmPasswordError);
+            }
+            if (!email || !password || password.length > 128 || !confirmation || password !== confirmation) {
+                (email ? (password && password.length <= 128 ? registerConfirmPassword : registerPassword) : registerEmail).focus();
                 return;
             }
             const button = e.currentTarget.querySelector('button[type="submit"]');
