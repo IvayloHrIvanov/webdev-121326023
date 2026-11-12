@@ -16,7 +16,7 @@ const pool = createDatabasePool(connectionString);
 
 function runSpawn(args, databaseUrl, schemaName) {
   return new Promise((resolve) => {
-    const p = spawn('node', args, {
+    const p = spawn('node', ['--test-concurrency=1', ...args], {
       stdio: 'inherit',
       env: {
         ...process.env,
