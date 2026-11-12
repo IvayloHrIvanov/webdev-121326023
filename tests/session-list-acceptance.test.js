@@ -1,3 +1,4 @@
+import '../scripts/test-database-setup.js';
 import { describe, it, before, beforeEach, after } from 'node:test';
 import request from 'supertest';
 import { expect } from 'chai';

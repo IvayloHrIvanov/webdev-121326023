@@ -3,57 +3,44 @@
     <head>
         <meta charset="UTF-8">
         <title>Study Groups & Sessions Dashboard</title>
-        <style>
-            body { font-family: sans-serif; margin: 30px; background: #f4f4f9; color: #333; }
-            .container { max-width: 950px; margin: auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); margin-bottom: 20px; }
-            header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; border-bottom: 1px solid #ddd; padding-bottom: 10px; }
-            table { width: 100%; border-collapse: collapse; margin-top: 15px; }
-            th, td { padding: 12px; border-bottom: 1px solid #ddd; text-align: left; }
-            th { background: #007bff; color: white; }
-            button { padding: 6px 12px; color: white; border: none; border-radius: 4px; cursor: pointer; margin-right: 5px; }
-            .btn-attend { background: #28a745; }
-            .btn-attend:hover { background: #218838; }
-            .btn-not-attend { background: #dc3545; }
-            .btn-not-attend:hover { background: #c82333; }
-            .btn-primary { background: #007bff; }
-            .btn-primary:hover { background: #0056b3; }
-            .btn-success { background: #17a2b8; }
-            .btn-success:hover { background: #138496; }
-            .form-group { margin-bottom: 10px; }
-            label { display: block; margin-bottom: 5px; font-weight: bold; font-size: 14px; }
-            input[type="text"], input[type="datetime-local"], select { width: 100%; padding: 8px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px; }
-            .error { color: #dc3545; margin-top: 5px; font-size: 14px; }
-            .success { color: #28a745; margin-top: 5px; font-size: 14px; }
-            .admin-section, .schedule-section { background: #f8f9fa; padding: 15px; border-radius: 6px; margin-top: 15px; border: 1px solid #e9ecef; }
-            .operator-row { display: flex; align-items: center; margin-bottom: 5px; }
-            .operator-row select { flex: 1; margin-right: 5px; }
-        </style>
+        <link rel="stylesheet" href="/theme.css">
+        <link rel="stylesheet" href="/app.css">
+        <script src="/theme.js"></script>
     </head>
-    <body>
+    <body class="dashboard-page">
         <div class="container">
             <header>
                 <div>
-                    <h2 id="user-greeting" style="margin: 0;">Dashboard</h2>
-                    <small id="user-role" style="color: #6c757d;"></small>
+                    <h2 id="user-greeting" class="user-greeting">Dashboard</h2>
+                    <small id="user-role"></small>
                 </div>
                 <div>
+                    <button class="theme-toggle" type="button" aria-label="Switch to dark mode" title="Switch to dark mode" aria-pressed="false">
+                        <svg class="theme-icon theme-icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true" focusable="false">
+                            <circle cx="12" cy="12" r="4"></circle>
+                            <path d="M12 2v2m0 16v2M4.93 4.93l1.42 1.42m11.3 11.3 1.42 1.42M2 12h2m16 0h2M4.93 19.07l1.42-1.42m11.3-11.3 1.42-1.42"></path>
+                        </svg>
+                        <svg class="theme-icon theme-icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+                            <path d="M20.9 13A9 9 0 0 1 11 3.1 9 9 0 1 0 20.9 13Z"></path>
+                        </svg>
+                    </button>
                     <button class="btn-not-attend" onclick="deleteMyAccount()">Delete Account</button>
                     <button class="btn-not-attend" onclick="logout()">Sign Out</button>
                 </div>
             </header>
 
             <!-- Admin Group Creation Form -->
-            <div id="admin-group-container" style="display: none;" class="admin-section">
+            <div id="admin-group-container" class="admin-section" hidden>
                 <h3>Create New Study Group (Admin Only)</h3>
-                <div id="group-error" class="error"></div>
-                <div id="group-success" class="success"></div>
+                <div id="group-error" class="error" role="alert" aria-live="polite"></div>
+                <div id="group-success" class="success" role="status" aria-live="polite"></div>
                 <form id="create-group-form">
                     <div class="form-group">
-                        <label>Group Name:</label>
+                        <label for="group-name">Group Name:</label>
                         <input type="text" id="group-name" required placeholder="e.g., Advanced Calculus">
                     </div>
                     <div class="form-group">
-                        <label>Course Name:</label>
+                        <label for="course-name">Course Name:</label>
                         <input type="text" id="course-name" required placeholder="e.g., MATH301">
                     </div>
                     <button type="submit" class="btn-primary">Create Group</button>
@@ -61,7 +48,7 @@
             </div>
 
             <!-- Admin Operator Permissions Window -->
-            <div id="admin-permissions-container" style="display: none;" class="admin-section">
+            <div id="admin-permissions-container" class="admin-section" hidden>
                 <h3>Operator Permissions Management (Admin Only)</h3>
                 <p>Assign multiple operators/owners (Operator accounts only) to control specific groups:</p>
                 <div id="perm-error" class="error"></div>
@@ -75,29 +62,29 @@
                         </tr>
                     </thead>
                     <tbody>
-                        <!-- Populated via JS -->
+                        <tr><td colspan="3">Loading group permissions...</td></tr>
                     </tbody>
                 </table>
             </div>
 
             <!-- Admin Account Management Tab / Section -->
-            <div id="admin-users-container" style="display: none;" class="admin-section">
+            <div id="admin-users-container" class="admin-section" hidden>
                 <h3>Account Management (Admin Only)</h3>
-                <div id="user-admin-success" class="success" style="margin-bottom: 10px;"></div>
+                <div id="user-admin-success" class="success spaced-message" role="status" aria-live="polite"></div>
 
                 <h4>Add New Account</h4>
-                <form id="admin-create-user-form" novalidate style="margin-bottom: 20px;">
+                <form id="admin-create-user-form" class="spaced-form" novalidate>
                     <div class="form-group">
-                        <label>Account Email / Name:</label>
-                        <div id="user-admin-error" class="error" style="margin-bottom: 5px;"></div>
+                        <label for="new-user-email">Account Email / Name:</label>
+                        <div id="user-admin-error" class="error field-error" role="alert" aria-live="polite"></div>
                         <input type="email" id="new-user-email" required placeholder="e.g., user@example.com">
                     </div>
                     <div class="form-group">
-                        <label>Password:</label>
+                        <label for="new-user-password">Password:</label>
                         <input type="password" id="new-user-password" required placeholder="Password">
                     </div>
                     <div class="form-group">
-                        <label>Level / Role:</label>
+                        <label for="new-user-role">Level / Role:</label>
                         <select id="new-user-role">
                             <option value="student">User / Student</option>
                             <option value="operator">Operator</option>
@@ -118,9 +105,32 @@
                         </tr>
                     </thead>
                     <tbody>
-                        <!-- Populated via JS -->
+                        <tr><td colspan="4">Loading accounts...</td></tr>
                     </tbody>
                 </table>
+            </div>
+        </div>
+
+        <div id="dashboard-error" class="error dashboard-error" role="alert" aria-live="polite"></div>
+
+        <div class="container">
+            <h2>Study Session Notes Summariser (AI Feature)</h2>
+            <p>Paste completed study session notes below to generate an AI-powered two-line summary and topic tags.</p>
+            <div id="summarise-error" class="error" role="alert" aria-live="polite"></div>
+            <div id="summarise-success" class="success" role="status" aria-live="polite"></div>
+            <form id="summarise-form">
+                <div class="form-group">
+                    <label for="notes-input">Session Notes:</label>
+                    <textarea id="notes-input" class="notes-input" rows="4" required placeholder="Enter study session notes here..."></textarea>
+                </div>
+                <button type="submit" id="summarise-btn" class="btn-primary">Summarise Notes</button>
+            </form>
+            <div id="summarise-result" class="summary-result" hidden>
+                <h4 id="result-title">AI Suggestion Result (Distinct from Database Facts):</h4>
+                <p><strong>Summary:</strong></p>
+                <p id="result-summary" class="summary-output"></p>
+                <p id="result-tags-label"><strong>Suggested Tags:</strong></p>
+                <div id="result-tags" class="summary-tags"></div>
             </div>
         </div>
 
@@ -136,13 +146,22 @@
                     </tr>
                 </thead>
                 <tbody>
-                    <!-- Populated via JS -->
+                    <tr><td colspan="4">Loading upcoming sessions...</td></tr>
                 </tbody>
             </table>
         </div>
 
         <div class="container">
             <h2>Available Study Groups</h2>
+            <form id="group-search-form" class="group-search-form">
+                <label for="group-interest">Find a group by course or topic:</label>
+                <div class="group-search-controls">
+                    <input type="search" id="group-interest" required>
+                    <button type="submit" class="btn-primary">Find Groups</button>
+                </div>
+            </form>
+            <p id="group-suggestion-status" role="status" aria-live="polite"></p>
+            <ul id="group-suggestions" class="group-suggestions"></ul>
             <table id="groups-table">
                 <thead>
                     <tr>
@@ -153,7 +172,7 @@
                     </tr>
                 </thead>
                 <tbody>
-                    <!-- Populated via JS -->
+                    <tr><td colspan="4">Loading study groups...</td></tr>
                 </tbody>
             </table>
         </div>
@@ -178,77 +197,95 @@
             }
 
             async function init() {
-                const meRes = await fetch('/api/auth/me');
-                if (meRes.status === 401) {
-                    window.location.href = '/login';
-                    return;
-                }
-                currentUser = await meRes.json();
-                document.getElementById('user-greeting').innerText = `Welcome, ${currentUser.email}`;
-                document.getElementById('user-role').innerText = `Role: ${currentUser.role.toUpperCase()}`;
+                try {
+                    const meRes = await fetch('/api/auth/me');
+                    if (meRes.status === 401) {
+                        window.location.href = '/login';
+                        return;
+                    }
+                    if (!meRes.ok) throw new Error('Unable to verify your sign-in.');
+                    currentUser = await meRes.json();
+                    document.getElementById('user-greeting').innerText = `Welcome, ${currentUser.email}`;
+                    document.getElementById('user-role').innerText = `Role: ${currentUser.role.toUpperCase()}`;
 
-                if (currentUser.role === 'admin') {
-                    document.getElementById('admin-group-container').style.display = 'block';
-                    document.getElementById('admin-permissions-container').style.display = 'block';
-                    document.getElementById('admin-users-container').style.display = 'block';
-                    const usersRes = await fetch('/api/users');
-                    if (usersRes.ok) {
+                    if (currentUser.role === 'admin') {
+                        document.getElementById('admin-group-container').hidden = false;
+                        document.getElementById('admin-permissions-container').hidden = false;
+                        document.getElementById('admin-users-container').hidden = false;
+                        const usersRes = await fetch('/api/users');
+                        if (!usersRes.ok) throw new Error('Unable to load account management.');
                         allUsers = await usersRes.json();
-                        // Exclude admin from group operator choices (admins have full rights by default)
                         validOperators = allUsers.filter(u => u.role === 'operator');
                         renderAdminUsersTable();
                     }
-                }
 
-                loadData();
+                    await loadData();
+                } catch {
+                    document.getElementById('dashboard-error').innerText = 'Could not load your dashboard. Please try again.';
+                }
             }
 
             async function loadData() {
-                const gRes = await fetch('/api/groups');
-                const groups = await gRes.json();
+                const sessionRows = document.querySelector('#sessions-table tbody');
+                const groupRows = document.querySelector('#groups-table tbody');
+                const dashboardError = document.getElementById('dashboard-error');
+                dashboardError.innerText = '';
+                sessionRows.innerHTML = '<tr><td colspan="4">Loading upcoming sessions...</td></tr>';
+                groupRows.innerHTML = '<tr><td colspan="4">Loading study groups...</td></tr>';
+                try {
+                    const gRes = await fetch('/api/groups');
+                    if (!gRes.ok) throw new Error('Could not load groups');
+                    const groups = await gRes.json();
 
-                for (const g of groups) {
-                    if (!groupOperatorsMap[g.id]) {
-                        const opRes = await fetch(`/api/groups/${g.id}/operators`);
-                        if (opRes.ok) {
-                            const ops = await opRes.json();
-                            groupOperatorsMap[g.id] = ops.map(o => o.user_id);
+                    for (const g of groups) {
+                        if (!groupOperatorsMap[g.id]) {
+                            const opRes = await fetch(`/api/groups/${g.id}/operators`);
+                            if (opRes.ok) {
+                                const ops = await opRes.json();
+                                groupOperatorsMap[g.id] = ops.map(o => o.user_id);
+                            }
                         }
                     }
-                }
 
-                const sRes = await fetch('/api/sessions');
-                const sessions = await sRes.json();
-                const sTbody = document.querySelector('#sessions-table tbody');
-                sTbody.innerHTML = '';
-                if (sessions.length === 0) {
-                    sTbody.innerHTML = '<tr><td colspan="4">No upcoming sessions.</td></tr>';
-                } else {
-                    sessions.forEach(s => {
-                        const tr = document.createElement('tr');
-                        const isAttending = s.attendance_status === 'attending';
-                        let actionHtml = isAttending
-                            ? `<button class="btn-not-attend" onclick="toggleSessionAttendance(${s.id}, 'not_attending')">Will Not Attend</button>`
-                            : `<button class="btn-attend" onclick="toggleSessionAttendance(${s.id}, 'attending')">Attend</button>`;
+                    const sRes = await fetch('/api/sessions');
+                    if (!sRes.ok) throw new Error('Could not load sessions');
+                    const sessions = await sRes.json();
+                    const sTbody = sessionRows;
+                    sTbody.innerHTML = '';
+                    if (sessions.length === 0) {
+                        sTbody.innerHTML = '<tr><td colspan="4">No upcoming sessions.</td></tr>';
+                    } else {
+                        sessions.forEach(s => {
+                            const tr = document.createElement('tr');
+                            const isAttending = s.attendance_status === 'attending';
+                            let actionHtml = isAttending
+                                ? `<button class="btn-not-attend" onclick="toggleSessionAttendance(${s.id}, 'not_attending')">Will Not Attend</button>`
+                                : `<button class="btn-attend" onclick="toggleSessionAttendance(${s.id}, 'attending')">Attend</button>`;
 
-                        const groupOps = groupOperatorsMap[s.group_id] || [s.owner_id];
-                        const canDeleteSession = currentUser.role === 'admin' || groupOps.includes(currentUser.id);
-                        if (canDeleteSession) {
-                            actionHtml += `<button class="btn-not-attend" onclick="deleteSession(${s.id})">Delete Session</button>`;
+                            const groupOps = groupOperatorsMap[s.group_id] || [s.owner_id];
+                            const canDeleteSession = currentUser.role === 'admin' || groupOps.includes(currentUser.id);
+                            if (canDeleteSession) {
+                                actionHtml += `<button class="btn-not-attend" onclick="deleteSession(${s.id})">Delete Session</button>`;
+                            }
+
+                            tr.innerHTML = `<td>${s.title}</td><td>${s.course_name}</td><td>${format24h(s.start_time)}</td><td>${actionHtml}</td>`;
+                            sTbody.appendChild(tr);
+                        });
+                    }
+
+                    const gTbody = groupRows;
+                    gTbody.innerHTML = '';
+
+                    let permTbody = document.querySelector('#permissions-table tbody');
+                    if (permTbody) permTbody.innerHTML = '';
+                    if (groups.length === 0) {
+                        gTbody.innerHTML = '<tr><td colspan="4">No study groups available.</td></tr>';
+                        if (currentUser.role === 'admin' && permTbody) {
+                            permTbody.innerHTML = '<tr><td colspan="3">No study groups available.</td></tr>';
                         }
+                    }
 
-                        tr.innerHTML = `<td>${s.title}</td><td>${s.course_name}</td><td>${format24h(s.start_time)}</td><td>${actionHtml}</td>`;
-                        sTbody.appendChild(tr);
-                    });
-                }
-
-                const gTbody = document.querySelector('#groups-table tbody');
-                gTbody.innerHTML = '';
-
-                let permTbody = document.querySelector('#permissions-table tbody');
-                if (permTbody) permTbody.innerHTML = '';
-
-                groups.forEach(g => {
+                    groups.forEach(g => {
                     const tr = document.createElement('tr');
                     let memberAction = g.is_member
                         ? `<button class="btn-not-attend" onclick="toggleMembership(${g.id}, true)">Leave</button>`
@@ -267,15 +304,15 @@
                                 <h4>Schedule Session</h4>
                                 <form onsubmit="scheduleSession(event, ${g.id})">
                                     <div class="form-group">
-                                        <label>Session Title:</label>
+                                                        <label for="title-${g.id}">Session Title:</label>
                                         <input type="text" id="title-${g.id}" required placeholder="e.g. Chapter 1 Review">
                                     </div>
                                     <div class="form-group">
-                                        <label>Start Time (24h):</label>
+                                                        <label for="start-${g.id}">Start Time (24h):</label>
                                         <input type="datetime-local" id="start-${g.id}" required>
                                     </div>
                                     <div class="form-group">
-                                        <label>End Time (24h):</label>
+                                                        <label for="end-${g.id}">End Time (24h):</label>
                                         <input type="datetime-local" id="end-${g.id}" required>
                                     </div>
                                     <button type="submit" class="btn-primary">Schedule</button>
@@ -319,7 +356,8 @@
 
                             operatorsRowsHtml += `
                                 <div class="operator-row" data-index="${index}">
-                                    <select class="operator-select-${g.id}" onchange="onOperatorSelectChange(${g.id})">
+                                    <label class="visually-hidden" for="operator-${g.id}-${index}">Assigned group operator</label>
+                                    <select id="operator-${g.id}-${index}" class="operator-select-${g.id}" onchange="onOperatorSelectChange(${g.id})">
                                         ${optionsHtml}
                                     </select>
                                     <button type="button" class="btn-not-attend" onclick="removeOperatorRow(${g.id}, this)">Delete</button>
@@ -327,8 +365,8 @@
                             `;
                         });
                         operatorsRowsHtml += `</div>`;
-                        operatorsRowsHtml += `<button type="button" class="btn-success" style="margin-top: 5px;" onclick="addOperatorRow(${g.id})">+ Add Operator</button>`;
-                        operatorsRowsHtml += `<button type="button" class="btn-primary" style="margin-top: 5px;" onclick="saveGroupOperators(${g.id})">Save Operators</button>`;
+                        operatorsRowsHtml += `<button type="button" class="btn-success spaced-button" onclick="addOperatorRow(${g.id})">+ Add Operator</button>`;
+                        operatorsRowsHtml += `<button type="button" class="btn-primary spaced-button" onclick="saveGroupOperators(${g.id})">Save Operators</button>`;
 
                         ptr.innerHTML = `
                             <td>${g.name}</td>
@@ -337,7 +375,12 @@
                         `;
                         permTbody.appendChild(ptr);
                     }
-                });
+                    });
+                } catch {
+                    dashboardError.innerText = 'Could not load dashboard data. Please try again.';
+                    sessionRows.innerHTML = '<tr><td colspan="4">Unable to load upcoming sessions.</td></tr>';
+                    groupRows.innerHTML = '<tr><td colspan="4">Unable to load study groups.</td></tr>';
+                }
             }
 
             function updateGroupOperatorsMapFromDOM(groupId) {
@@ -388,6 +431,10 @@
                 if (!permTbody) return;
                 fetch('/api/groups').then(r => r.json()).then(groups => {
                     permTbody.innerHTML = '';
+                    if (groups.length === 0) {
+                        permTbody.innerHTML = '<tr><td colspan="3">No study groups available.</td></tr>';
+                        return;
+                    }
                     groups.forEach(g => {
                         const ptr = document.createElement('tr');
                         const assignedOps = groupOperatorsMap[g.id] !== undefined ? groupOperatorsMap[g.id] : [g.owner_id];
@@ -412,7 +459,8 @@
 
                             operatorsRowsHtml += `
                                 <div class="operator-row" data-index="${index}">
-                                    <select class="operator-select-${g.id}" onchange="onOperatorSelectChange(${g.id})">
+                                    <label class="visually-hidden" for="operator-${g.id}-${index}">Assigned group operator</label>
+                                    <select id="operator-${g.id}-${index}" class="operator-select-${g.id}" onchange="onOperatorSelectChange(${g.id})">
                                         ${optionsHtml}
                                     </select>
                                     <button type="button" class="btn-not-attend" onclick="removeOperatorRow(${g.id}, this)">Delete</button>
@@ -420,8 +468,8 @@
                             `;
                         });
                         operatorsRowsHtml += `</div>`;
-                        operatorsRowsHtml += `<button type="button" class="btn-success" style="margin-top: 5px;" onclick="addOperatorRow(${g.id})">+ Add Operator</button>`;
-                        operatorsRowsHtml += `<button type="button" class="btn-primary" style="margin-top: 5px;" onclick="saveGroupOperators(${g.id})">Save Operators</button>`;
+                        operatorsRowsHtml += `<button type="button" class="btn-success spaced-button" onclick="addOperatorRow(${g.id})">+ Add Operator</button>`;
+                        operatorsRowsHtml += `<button type="button" class="btn-primary spaced-button" onclick="saveGroupOperators(${g.id})">Save Operators</button>`;
 
                         ptr.innerHTML = `
                             <td>${g.name}</td>
@@ -576,6 +624,10 @@
                 const tbody = document.querySelector('#admin-users-table tbody');
                 if (!tbody) return;
                 tbody.innerHTML = '';
+                if (allUsers.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="4">No user accounts found.</td></tr>';
+                    return;
+                }
                 allUsers.forEach(u => {
                     const tr = document.createElement('tr');
                     tr.innerHTML = `
@@ -680,6 +732,99 @@
                     } else {
                         if (userAdminError) userAdminError.innerText = data.error || 'Failed to create account';
                         if (userAdminSuccess) userAdminSuccess.innerText = '';
+                    }
+                });
+            }
+
+            const summariseForm = document.getElementById('summarise-form');
+            const groupSearchForm = document.getElementById('group-search-form');
+            if (groupSearchForm) {
+                groupSearchForm.addEventListener('submit', async (event) => {
+                    event.preventDefault();
+                    const interest = document.getElementById('group-interest').value.trim();
+                    const status = document.getElementById('group-suggestion-status');
+                    const suggestionsList = document.getElementById('group-suggestions');
+                    status.innerText = 'Finding matching groups...';
+                    suggestionsList.replaceChildren();
+
+                    try {
+                        const response = await fetch(`/api/groups/suggestions?interest=${encodeURIComponent(interest)}`);
+                        const suggestions = await response.json();
+                        if (!response.ok) {
+                            status.innerText = suggestions.error || 'Unable to find groups.';
+                            return;
+                        }
+                        if (suggestions.length === 0) {
+                            status.innerText = 'No matching groups you are eligible to join.';
+                            return;
+                        }
+                        suggestions.forEach(group => {
+                            const item = document.createElement('li');
+                            item.textContent = `${group.name} - ${group.course_name}`;
+                            suggestionsList.appendChild(item);
+                        });
+                        status.innerText = `${suggestions.length} matching group${suggestions.length === 1 ? '' : 's'} found.`;
+                    } catch {
+                        status.innerText = 'Unable to find groups. Please try again.';
+                    }
+                });
+            }
+
+            if (summariseForm) {
+                summariseForm.addEventListener('submit', async (e) => {
+                    e.preventDefault();
+                    const notes = document.getElementById('notes-input').value;
+                    const errEl = document.getElementById('summarise-error');
+                    const succEl = document.getElementById('summarise-success');
+                    const resultEl = document.getElementById('summarise-result');
+                    const btn = document.getElementById('summarise-btn');
+
+                    errEl.innerText = '';
+                    succEl.innerText = '';
+                    resultEl.hidden = true;
+
+                    btn.disabled = true;
+                    btn.innerText = 'AI is thinking...';
+
+                    try {
+                        const res = await fetch('/api/summarise-notes', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ notes })
+                        });
+                        const data = await res.json();
+                        if (!res.ok) {
+                            throw new Error(data.error || 'Failed to summarise notes');
+                        }
+
+                        const isFallback = data.source === 'fallback';
+                        if (isFallback) {
+                            errEl.innerText = data.message || 'AI unavailable; showing a fallback result.';
+                        } else {
+                            succEl.innerText = 'Notes successfully summarised by AI suggestion!';
+                        }
+                        document.getElementById('result-title').innerText = isFallback
+                            ? 'Rule-based fallback (not AI-generated)'
+                            : 'AI Suggestion Result (Distinct from Database Facts):';
+                        document.getElementById('result-tags-label').innerHTML = isFallback
+                            ? '<strong>Default Tags:</strong>'
+                            : '<strong>Suggested Tags:</strong>';
+                        document.getElementById('result-summary').innerText = data.summary;
+                        const tagsContainer = document.getElementById('result-tags');
+                        tagsContainer.innerHTML = '';
+                        (data.tags || []).forEach(tag => {
+                            const span = document.createElement('span');
+                            span.className = 'summary-tag';
+                            span.innerText = tag;
+                            tagsContainer.appendChild(span);
+                        });
+                        resultEl.hidden = false;
+                    } catch (err) {
+                        errEl.innerText = err.message || 'Model feature failed or service unavailable. Using rule-based fallback.';
+                        resultEl.hidden = true;
+                    } finally {
+                        btn.disabled = false;
+                        btn.innerText = 'Summarise Notes';
                     }
                 });
             }

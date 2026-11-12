@@ -5,7 +5,7 @@
   "mcp": "npm run mcp",
 
   "//liveUrl": "Exercise 4. Where your deployed application answers, with no trailing slash.",
-  "liveUrl": "",
+  "liveUrl": "https://webdev-121326023.onrender.com",
 
   "lectures": [
     { "number": 1, "title": "Lecture 1", "content": "Introduction to Model Context Protocol" },

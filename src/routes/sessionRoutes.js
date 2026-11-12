@@ -7,6 +7,12 @@ function requireAuth(req, res, next) {
   if (!req.session || !req.session.userId) {
     return res.status(401).json({ error: 'Unauthorized', redirect: '/login' });
   }
+  if (req.session.passwordSetupRequired) {
+    return res.status(403).json({
+      error: 'Set an app password before using study group features.',
+      redirect: '/set-password'
+    });
+  }
   next();
 }
 
@@ -45,6 +51,15 @@ router.get('/groups', requireAuth, async (req, res) => {
     return res.json(groups);
   } catch (err) {
     return res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/groups/suggestions', requireAuth, async (req, res) => {
+  try {
+    const groups = await sessionService.suggestGroups(req.session.userId, req.query.interest);
+    return res.json(groups);
+  } catch (err) {
+    return res.status(err.status || 500).json({ error: err.message });
   }
 });
 
@@ -107,10 +122,10 @@ router.post('/groups/:id/operators', requireAuth, async (req, res) => {
 
 router.get('/users', requireAuth, async (req, res) => {
   try {
-    const users = await sessionService.getAllUsers();
+    const users = await sessionService.getAllUsers(req.session.userId);
     return res.json(users);
   } catch (err) {
-    return res.status(500).json({ error: err.message });
+    return res.status(err.status || 500).json({ error: err.message });
   }
 });
 

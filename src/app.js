@@ -26,6 +26,9 @@ function checkAuth(req, res, next) {
   if (!req.session || !req.session.userId) {
     return res.redirect('/login');
   }
+  if (req.session.passwordSetupRequired) {
+    return res.redirect('/set-password');
+  }
   next();
 }
 
@@ -56,6 +59,16 @@ app.get('/', (req, res) => {
 
 app.get('/login', (req, res) => {
   res.sendFile(path.join(__dirname, '../public/login.html'));
+});
+
+app.get('/set-password', (req, res) => {
+  if (!req.session || !req.session.userId) {
+    return res.redirect('/login');
+  }
+  if (!req.session.passwordSetupRequired) {
+    return res.redirect('/sessions');
+  }
+  res.sendFile(path.join(__dirname, '../public/set-password.html'));
 });
 
 app.get('/sessions', checkAuth, (req, res) => {
