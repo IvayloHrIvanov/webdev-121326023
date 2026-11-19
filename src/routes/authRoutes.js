@@ -1,5 +1,6 @@
 import express from 'express';
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
+import { SESSION_COOKIE_NAME } from '../config.js';
 import * as authService from '../services/authService.js';
 
 const router = express.Router();
@@ -51,6 +52,13 @@ router.get('/me', (req, res) => {
   });
 });
 
+router.post('/activity', (req, res) => {
+  if (!req.session?.userId) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  return res.sendStatus(204);
+});
+
 router.post('/login', async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -62,6 +70,7 @@ router.post('/login', async (req, res) => {
     req.session.userEmail = user.email;
     req.session.role = user.role;
     req.session.passwordSetupRequired = false;
+    req.session.lastActivityAt = Date.now();
     return res.json({ success: true, user });
   } catch (err) {
     return res.status(500).json({ error: err.message });
@@ -75,6 +84,7 @@ router.post('/register', async (req, res) => {
     req.session.userEmail = user.email;
     req.session.role = user.role;
     req.session.passwordSetupRequired = false;
+    req.session.lastActivityAt = Date.now();
     return res.status(201).json({ success: true, user });
   } catch (err) {
     return res.status(err.status || 500).json({ error: err.message });
@@ -135,6 +145,7 @@ router.get('/google/callback', async (req, res) => {
     req.session.userEmail = user.email;
     req.session.role = user.role;
     req.session.passwordSetupRequired = user.passwordSetupRequired === true;
+    req.session.lastActivityAt = Date.now();
     return res.redirect(req.session.passwordSetupRequired ? '/set-password' : '/sessions');
   } catch (err) {
     const code = err.status === 409 ? 'google_account_exists' : 'google_sign_in_failed';
@@ -143,7 +154,13 @@ router.get('/google/callback', async (req, res) => {
 });
 
 router.post('/logout', (req, res) => {
-  req.session.destroy(() => {
+  if (!req.session) {
+    res.clearCookie(SESSION_COOKIE_NAME, { path: '/' });
+    return res.json({ success: true });
+  }
+  req.session.destroy((err) => {
+    if (err) return res.status(500).json({ error: 'Could not sign out.' });
+    res.clearCookie(SESSION_COOKIE_NAME, { path: '/' });
     res.json({ success: true });
   });
 });
@@ -155,7 +172,9 @@ router.delete('/account', async (req, res) => {
   try {
     const { password } = req.body;
     await authService.deleteAccount(req.session.userId, password);
-    req.session.destroy(() => {
+    req.session.destroy((err) => {
+      res.clearCookie(SESSION_COOKIE_NAME, { path: '/' });
+      if (err) return res.status(500).json({ error: 'Account was deleted, but the session could not be ended.' });
       return res.json({ success: true });
     });
   } catch (err) {

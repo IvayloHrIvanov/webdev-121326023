@@ -130,6 +130,7 @@ Screens:
 - [AC-26] Admin accounts have account management and can add, delete and edit accounts and there name/email, level/role and password
 - [AC-27] A person who registers through Google without an existing account must set an app password before using the application, and can then confirm account deletion with that password.
 - [AC-28] A visitor who registers with a new e-mail and password receives a signed-in student account; duplicate e-mails are rejected.
+- [AC-29] A signed-in user who is inactive for four minutes sees a session-expiry warning and can stay signed in; after five minutes, authentication is invalidated and the user is redirected to sign in without clearing preference cookies.
 
 ## Traceability
 <!-- Filled in from Exercise 3 onward: each AC id, and the test that names it. -->
@@ -162,6 +163,7 @@ Screens:
 | AC-26 | An admin user who opens the Account Management tab can create, edit, or delete any user account (requiring admin password authentication when deleting) and see updated listings |
 | AC-27 | A new Google registration must set an app password before using the app and can confirm account deletion with it |
 | AC-28 | A new local registration creates a signed-in student account and rejects duplicate e-mails |
+| AC-29 | A session warns at four minutes of inactivity, expires at five minutes, and preserves preference cookies |
 
 
 ## Spec vs result

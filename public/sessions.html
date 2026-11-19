@@ -8,6 +8,10 @@
         <script src="/theme.js"></script>
     </head>
     <body class="dashboard-page">
+        <div id="session-timeout-warning" class="session-timeout-warning" role="alert" aria-live="assertive" hidden>
+            <span id="session-timeout-message">Your session will expire in 1 minute due to inactivity.</span>
+            <button id="stay-signed-in" type="button">Stay signed in</button>
+        </div>
         <div class="container">
             <header class="dashboard-header">
                 <div>
@@ -208,6 +212,7 @@
             </div>
         </div>
 
+        <script src="/session-timeout.js"></script>
         <script>
             let currentUser = null;
             let allUsers = [];
@@ -236,6 +241,7 @@
                     }
                     if (!meRes.ok) throw new Error('Unable to verify your sign-in.');
                     currentUser = await meRes.json();
+                    window.startSessionTimeout();
                     document.getElementById('user-greeting').innerText = `Welcome, ${currentUser.email}`;
                     document.getElementById('user-role').innerText = `Role: ${currentUser.role.toUpperCase()}`;
 

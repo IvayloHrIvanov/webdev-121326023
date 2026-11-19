@@ -1,4 +1,4 @@
-import './config.js';
+import { SESSION_COOKIE_NAME, SESSION_TIMEOUT_MS } from './config.js';
 import express from 'express';
 import session from 'express-session';
 import path from 'path';
@@ -11,15 +11,45 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
+const sessionStore = new session.MemoryStore();
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 app.use(session({
   secret: process.env.SESSION_SECRET || 'secret-key',
+  name: SESSION_COOKIE_NAME,
+  store: sessionStore,
   resave: false,
-  saveUninitialized: false
+  saveUninitialized: false,
+  rolling: true,
+  cookie: {
+    maxAge: SESSION_TIMEOUT_MS,
+    httpOnly: true,
+    sameSite: 'lax'
+  }
 }));
+
+app.locals.sessionStore = sessionStore;
+
+app.use((req, res, next) => {
+  if (!req.session?.userId) {
+    return next();
+  }
+
+  const now = Date.now();
+  const lastActivityAt = req.session.lastActivityAt;
+  if (typeof lastActivityAt === 'number' && now - lastActivityAt >= SESSION_TIMEOUT_MS) {
+    return req.session.destroy((err) => {
+      if (err) return next(err);
+      res.clearCookie(SESSION_COOKIE_NAME, { path: '/' });
+      next();
+    });
+  }
+
+  req.session.lastActivityAt = now;
+  next();
+});
 
 // Authentication check middleware for HTML pages
 function checkAuth(req, res, next) {
