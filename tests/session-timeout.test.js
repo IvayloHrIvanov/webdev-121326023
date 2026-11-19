@@ -136,7 +136,6 @@ describe('Session inactivity timeout', () => {
   });
 
   it('AC-29: expires the server session and clears only its authentication cookie', async () => {
-    const loginStartedAt = Date.now();
     const agent = request.agent(app);
     const login = await agent
       .post('/api/auth/login')
@@ -145,7 +144,8 @@ describe('Session inactivity timeout', () => {
     const sessionCookie = login.headers['set-cookie'].find((cookie) => cookie.startsWith('connect.sid='));
     expect(sessionCookie).to.include('Expires=');
     const cookieExpiration = new Date(sessionCookie.match(/Expires=([^;]+)/)[1]).getTime();
-    expect(cookieExpiration - loginStartedAt).to.be.within(SESSION_TIMEOUT_MS - 1000, SESSION_TIMEOUT_MS + 1000);
+    const responseDate = new Date(login.headers.date).getTime();
+    expect(cookieExpiration - responseDate).to.be.within(SESSION_TIMEOUT_MS - 1000, SESSION_TIMEOUT_MS + 1000);
 
     const cookiePair = sessionCookie.split(';')[0];
     const sessionId = getSessionId(cookiePair);

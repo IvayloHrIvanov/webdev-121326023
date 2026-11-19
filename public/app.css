@@ -272,6 +272,10 @@ th {
     font-size: var(--font-small);
 }
 
+.login-box > .error:not(:empty) {
+    margin-bottom: 10px;
+}
+
 .session-timeout-warning {
     position: fixed;
     top: var(--space-4);

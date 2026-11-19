@@ -63,6 +63,9 @@
         if (errorCode) {
             document.getElementById('error').innerText = errorMessages[errorCode] || 'Sign-in failed.';
         }
+        if (errorCode === 'session_timeout') {
+            window.history.replaceState({}, document.title, window.location.pathname);
+        }
 
         const errorElement = document.getElementById('error');
         const heading = document.getElementById('login-heading');
