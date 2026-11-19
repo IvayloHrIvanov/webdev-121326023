@@ -261,6 +261,12 @@ describe('HTTP API routes', () => {
     expect(groupsRes.status).to.equal(200);
     expect(groupsRes.body).to.be.an('array');
 
+    const invalidSuggestions = await request(app)
+      .get('/api/groups/suggestions')
+      .set('Cookie', cookie);
+    expect(invalidSuggestions.status).to.equal(400);
+    expect(invalidSuggestions.body.error).to.include('Enter a course or topic');
+
     const sessionsRes = await request(app).get('/api/sessions').set('Cookie', cookie);
     expect(sessionsRes.status).to.equal(200);
     expect(sessionsRes.body).to.be.an('array');
@@ -292,7 +298,14 @@ describe('HTTP API routes', () => {
     expect(scheduleSession.status).to.equal(400);
 
     const joinMissingGroup = await request(app).post('/api/memberships').set('Cookie', cookie).send({ groupId: 99999 });
-    expect(joinMissingGroup.status).to.equal(500);
+    expect(joinMissingGroup.status).to.equal(404);
+
+    const leaveInvalidGroup = await request(app)
+      .delete('/api/memberships')
+      .set('Cookie', cookie)
+      .send({ groupId: 'invalid-group-id' });
+    expect(leaveInvalidGroup.status).to.equal(500);
+    expect(leaveInvalidGroup.body.error).to.be.a('string');
 
     const deleteMissingSession = await request(app).delete('/api/sessions/99999').set('Cookie', cookie);
     expect(deleteMissingSession.status).to.equal(404);

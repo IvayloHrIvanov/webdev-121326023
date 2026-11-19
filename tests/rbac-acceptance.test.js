@@ -70,6 +70,74 @@ describe('Authorization and session scheduling acceptance tests', () => {
     expect(membership.user_id).to.equal(adminId);
   });
 
+  it('optional group passwords are hashed and required only when joining or rejoining protected groups', async () => {
+    const freeGroup = await adminAgent.post('/api/groups').send({
+      name: 'Open Group S2',
+      courseName: 'Open Studies'
+    });
+    expect(freeGroup.status).to.equal(201);
+    const groups = await studentAgent.get('/api/groups');
+    expect(groups.body.find(group => group.id === freeGroup.body.groupId).is_password_protected).to.be.false;
+    const freeJoin = await studentAgent.post('/api/memberships').send({ groupId: freeGroup.body.groupId });
+    expect(freeJoin.status).to.equal(200);
+
+    const protectedGroup = await adminAgent.post('/api/groups').send({
+      name: 'Protected Group S2',
+      courseName: 'Private Studies',
+      password: 'study-secret'
+    });
+    expect(protectedGroup.status).to.equal(201);
+    const invalidPasswordGroup = await adminAgent.post('/api/groups').send({
+      name: 'Invalid Password Group S2',
+      courseName: 'Private Studies',
+      password: 123
+    });
+    expect(invalidPasswordGroup.status).to.equal(400);
+    const storedGroup = await getDb().get('SELECT password_hash FROM groups WHERE id = ?', [protectedGroup.body.groupId]);
+    expect(storedGroup.password_hash).not.to.equal('study-secret');
+    expect(await bcrypt.compare('study-secret', storedGroup.password_hash)).to.be.true;
+    const listedGroup = (await studentAgent.get('/api/groups')).body.find(group => group.id === protectedGroup.body.groupId);
+    expect(listedGroup.is_password_protected).to.be.true;
+    expect(listedGroup).not.to.have.property('password_hash');
+
+    const missingPassword = await studentAgent.post('/api/memberships').send({ groupId: protectedGroup.body.groupId });
+    expect(missingPassword.status).to.equal(409);
+    expect(missingPassword.body.code).to.equal('PASSWORD_REQUIRED');
+    const emptyPassword = await studentAgent.post('/api/memberships').send({
+      groupId: protectedGroup.body.groupId,
+      password: ''
+    });
+    expect(emptyPassword.status).to.equal(409);
+    expect(emptyPassword.body.code).to.equal('PASSWORD_REQUIRED');
+    const wrongPassword = await studentAgent.post('/api/memberships').send({
+      groupId: protectedGroup.body.groupId,
+      password: 'wrong'
+    });
+    expect(wrongPassword.status).to.equal(409);
+    expect(wrongPassword.body.error).to.include('Incorrect');
+    expect(await getDb().get('SELECT 1 FROM memberships WHERE user_id = ? AND group_id = ?', [studentId, protectedGroup.body.groupId])).to.be.null;
+
+    const joined = await studentAgent.post('/api/memberships').send({
+      groupId: protectedGroup.body.groupId,
+      password: 'study-secret'
+    });
+    expect(joined.status).to.equal(200);
+    const repeatedJoin = await studentAgent.post('/api/memberships').send({ groupId: protectedGroup.body.groupId });
+    expect(repeatedJoin.status).to.equal(200);
+
+    await studentAgent.delete('/api/memberships').send({ groupId: protectedGroup.body.groupId });
+    const wrongRejoin = await studentAgent.post('/api/memberships').send({
+      groupId: protectedGroup.body.groupId,
+      password: 'wrong'
+    });
+    expect(wrongRejoin.status).to.equal(409);
+    const rejoined = await studentAgent.post('/api/memberships').send({
+      groupId: protectedGroup.body.groupId,
+      password: 'study-secret'
+    });
+    expect(rejoined.status).to.equal(200);
+  });
+
   it('AC-18: A group owner receives success and the session is persisted', async () => {
     const res = await ownerAgent.post('/api/sessions').send({
       groupId,

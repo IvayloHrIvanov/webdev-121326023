@@ -18,8 +18,8 @@ function requireAuth(req, res, next) {
 
 router.post('/groups', requireAuth, async (req, res) => {
   try {
-    const { name, courseName } = req.body;
-    const groupId = await sessionService.createGroup(req.session.userId, { name, courseName });
+    const { name, courseName, password } = req.body;
+    const groupId = await sessionService.createGroup(req.session.userId, { name, courseName, password });
     return res.status(201).json({ success: true, groupId });
   } catch (err) {
     return res.status(err.status || 500).json({ error: err.message });
@@ -65,11 +65,14 @@ router.get('/groups/suggestions', requireAuth, async (req, res) => {
 
 router.post('/memberships', requireAuth, async (req, res) => {
   try {
-    const { groupId } = req.body;
-    await sessionService.joinGroup(req.session.userId, groupId);
+    const { groupId, password } = req.body;
+    await sessionService.joinGroup(req.session.userId, groupId, password);
     return res.json({ success: true });
   } catch (err) {
-    return res.status(500).json({ error: err.message });
+    return res.status(err.status || 500).json({
+      error: err.message,
+      ...(err.code ? { code: err.code } : {})
+    });
   }
 });
 

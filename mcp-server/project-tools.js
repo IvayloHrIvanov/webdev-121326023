@@ -14,10 +14,13 @@ export const projectTools = [
   },
   {
     name: 'join_group',
-    description: 'Adds the signed-in user to an open study group that still accepts new members',
+    description: 'Joins a study group, supplying its password when the group requires one',
     inputSchema: {
       type: 'object',
-      properties: { groupId: { type: 'number', description: 'The group ID to join' } },
+      properties: {
+        groupId: { type: 'number', description: 'The group ID to join' },
+        password: { type: 'string', description: 'Password for a password-protected study group' }
+      },
       required: ['groupId']
     }
   },
@@ -122,7 +125,7 @@ export async function callProjectTool(name, args = {}, {
       return toolResult(JSON.stringify(await service.getUpcomingSessions(userId)));
     }
     if (name === 'join_group') {
-      await service.joinGroup(userId, args.groupId);
+      await service.joinGroup(userId, args.groupId, args.password);
       return toolResult('You have successfully joined the group');
     }
     if (name === 'schedule_session') {

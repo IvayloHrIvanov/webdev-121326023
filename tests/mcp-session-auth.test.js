@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
 import { describe, it } from 'node:test';
 import { expect } from 'chai';
-import { projectTools, resolveMcpUser } from '../mcp-server/project-tools.js';
+import { callProjectTool, projectTools, resolveMcpUser } from '../mcp-server/project-tools.js';
 
 describe('MCP session authentication', () => {
   it('resolves the user from the configured application session cookie', async () => {
@@ -57,6 +57,22 @@ describe('MCP session authentication', () => {
       expect(tool.inputSchema.properties).not.to.have.property('userId');
       expect(tool.inputSchema.required || []).not.to.include('userId');
     }
+  });
+
+  it('passes an optional group password to the shared join service', async () => {
+    let joinArgs;
+    const result = await callProjectTool('join_group', {
+      groupId: 7,
+      password: 'group-secret'
+    }, {
+      resolveUser: async () => 42,
+      service: {
+        joinGroup: async (...args) => { joinArgs = args; }
+      }
+    });
+
+    expect(result.isError).not.to.be.true;
+    expect(joinArgs).to.deep.equal([42, 7, 'group-secret']);
   });
 
   it('does not log request content while rejecting an unauthenticated tool call', async () => {

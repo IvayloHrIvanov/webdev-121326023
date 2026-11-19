@@ -29,7 +29,30 @@ export async function suggestGroups(userId, interest) {
   );
 }
 
-export async function joinGroup(userId, groupId) {
+export async function joinGroup(userId, groupId, password) {
+  const group = await sessionRepo.getGroupById(groupId);
+  if (!group) {
+    const err = new Error('Group not found');
+    err.status = 404;
+    throw err;
+  }
+  if (await sessionRepo.hasMembership(userId, groupId)) {
+    return;
+  }
+  if (group.password_hash) {
+    if (password === undefined || password === '') {
+      const err = new Error('This study group requires a password.');
+      err.status = 409;
+      err.code = 'PASSWORD_REQUIRED';
+      throw err;
+    }
+    if (typeof password !== 'string' || !(await bcrypt.compare(password, group.password_hash))) {
+      const err = new Error('Incorrect study group password. Please try again.');
+      err.status = 409;
+      err.code = 'INVALID_GROUP_PASSWORD';
+      throw err;
+    }
+  }
   return await sessionRepo.addMembership(userId, groupId);
 }
 
@@ -41,7 +64,7 @@ export async function updateSessionAttendance(userId, sessionId, status) {
   return await sessionRepo.setSessionAttendance(userId, sessionId, status);
 }
 
-export async function createGroup(userId, { name, courseName }) {
+export async function createGroup(userId, { name, courseName, password }) {
   if (!name || !courseName) {
     const err = new Error('Name cannot be empty');
     err.status = 400;
@@ -53,7 +76,13 @@ export async function createGroup(userId, { name, courseName }) {
     err.status = 403;
     throw err;
   }
-  return await sessionRepo.createGroup(name, courseName, userId);
+  if (password !== undefined && typeof password !== 'string') {
+    const err = new Error('Group password must be text');
+    err.status = 400;
+    throw err;
+  }
+  const passwordHash = password ? await bcrypt.hash(password, 10) : null;
+  return await sessionRepo.createGroup(name, courseName, userId, passwordHash);
 }
 
 export async function scheduleSession(userId, { groupId, title, startTime, endTime }) {

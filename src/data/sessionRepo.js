@@ -26,6 +26,7 @@ export async function getAllGroupsForUser(userId) {
   const db = getDb();
   const query = `
     SELECT g.id, g.name, g.course_name, g.owner_id,
+           (g.password_hash IS NOT NULL) AS is_password_protected,
            (EXISTS(SELECT 1 FROM memberships m WHERE m.group_id = g.id AND m.user_id = ?))::int AS is_member,
            (SELECT MIN(s.start_time) FROM sessions s WHERE s.group_id = g.id AND s.start_time >= NOW()) AS next_session
     FROM groups g
@@ -38,14 +39,19 @@ export async function addMembership(userId, groupId) {
   return await db.run('INSERT INTO memberships (user_id, group_id) VALUES (?, ?) ON CONFLICT (user_id, group_id) DO NOTHING', [userId, groupId]);
 }
 
+export async function hasMembership(userId, groupId) {
+  const db = getDb();
+  return Boolean(await db.get('SELECT 1 FROM memberships WHERE user_id = ? AND group_id = ?', [userId, groupId]));
+}
+
 export async function removeMembership(userId, groupId) {
   const db = getDb();
   return await db.run('DELETE FROM memberships WHERE user_id = ? AND group_id = ?', [userId, groupId]);
 }
 
-export async function createGroup(name, courseName, ownerId) {
+export async function createGroup(name, courseName, ownerId, passwordHash = null) {
   const db = getDb();
-  const res = await db.run('INSERT INTO groups (name, course_name, owner_id) VALUES (?, ?, ?) RETURNING id', [name, courseName, ownerId]);
+  const res = await db.run('INSERT INTO groups (name, course_name, owner_id, password_hash) VALUES (?, ?, ?, ?) RETURNING id', [name, courseName, ownerId, passwordHash]);
   const groupId = res.lastID;
   await db.run('INSERT INTO memberships (user_id, group_id) VALUES (?, ?) ON CONFLICT (user_id, group_id) DO NOTHING', [ownerId, groupId]);
   return groupId;

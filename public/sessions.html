@@ -55,6 +55,10 @@
                         <label for="course-name">Course Name:</label>
                         <input type="text" id="course-name" required placeholder="e.g., MATH301">
                     </div>
+                    <div class="form-group">
+                        <label for="group-password">Group Password (optional):</label>
+                        <input type="password" id="group-password" autocomplete="new-password" placeholder="Leave blank for an open group">
+                    </div>
                     <button type="submit" class="btn-primary">Create Group</button>
                 </form>
             </details>
@@ -331,8 +335,8 @@
                     groups.forEach(g => {
                     const tr = document.createElement('tr');
                     let memberAction = g.is_member
-                        ? `<button class="btn-not-attend" onclick="toggleMembership(${g.id}, true, this)">Leave</button>`
-                        : `<button class="btn-attend" onclick="toggleMembership(${g.id}, false, this)">Join</button>`;
+                        ? `<button class="btn-not-attend" onclick="toggleMembership(${g.id}, true, this, ${Boolean(g.is_password_protected)})">Leave</button>`
+                        : `<button class="btn-attend" onclick="toggleMembership(${g.id}, false, this, ${Boolean(g.is_password_protected)})">Join</button>`;
 
                     if (currentUser.role === 'admin') {
                         memberAction += `<button class="btn-not-attend" onclick="deleteGroup(${g.id})">Delete Group</button>`;
@@ -548,11 +552,12 @@
                 document.getElementById('group-success').innerText = '';
                 const name = document.getElementById('group-name').value;
                 const courseName = document.getElementById('course-name').value;
+                const password = document.getElementById('group-password').value;
 
                 const res = await fetch('/api/groups', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ name, courseName })
+                    body: JSON.stringify({ name, courseName, password })
                 });
                 const data = await res.json();
                 if (res.ok && data.success) {
@@ -613,18 +618,38 @@
                 }
             }
 
-            async function toggleMembership(groupId, isMember, button) {
+            async function toggleMembership(groupId, isMember, button, isPasswordProtected = false) {
                 const method = isMember ? 'DELETE' : 'POST';
                 button.disabled = true;
                 let membershipUpdated = false;
                 try {
-                    const res = await fetch('/api/memberships', {
-                        method: method,
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ groupId })
-                    });
-                    if (!res.ok) {
-                        alert('Failed to update membership');
+                    let password;
+                    if (!isMember && isPasswordProtected) {
+                        password = prompt('Enter the study group password:');
+                        if (password === null) return;
+                    }
+
+                    let res;
+                    while (true) {
+                        res = await fetch('/api/memberships', {
+                            method,
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ groupId, ...(password !== undefined ? { password } : {}) })
+                        });
+                        if (res.ok) break;
+
+                        const data = await res.json();
+                        const needsPassword = res.status === 409
+                            && ['PASSWORD_REQUIRED', 'INVALID_GROUP_PASSWORD'].includes(data.code);
+                        if (!isMember && needsPassword) {
+                            if (data.code === 'INVALID_GROUP_PASSWORD') {
+                                alert('Incorrect study group password. Please try again.');
+                            }
+                            password = prompt('Enter the study group password:');
+                            if (password === null) return;
+                            continue;
+                        }
+                        alert(data.error || 'Failed to update membership');
                         return;
                     }
 
@@ -632,7 +657,7 @@
                     const nowMember = !isMember;
                     button.textContent = nowMember ? 'Leave' : 'Join';
                     button.className = nowMember ? 'btn-not-attend' : 'btn-attend';
-                    button.setAttribute('onclick', `toggleMembership(${groupId}, ${nowMember}, this)`);
+                    button.setAttribute('onclick', `toggleMembership(${groupId}, ${nowMember}, this, ${isPasswordProtected})`);
 
                     const sessionsRes = await fetch('/api/sessions');
                     if (!sessionsRes.ok) throw new Error('Could not refresh sessions');
